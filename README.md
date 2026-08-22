@@ -5,7 +5,7 @@ a partir de señales de polisomnografía (Sleep-EDFx).
 
 ## Equipo
 - María José García Bonilla
-- nombre
+- Joel Santiago Vargas Lindarte
 - nombre
 - nombre
 
