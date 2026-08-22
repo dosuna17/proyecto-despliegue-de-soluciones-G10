@@ -7,7 +7,7 @@ a partir de señales de polisomnografía (Sleep-EDFx).
 - María José García Bonilla
 - Joel Santiago Vargas Lindarte
 - Gabriel Antonio Vizcaya Meneses
-- nombre
+- Daniel Alejandro Osuna Garzón
 
 ## Estructura
 - `data/` — datos versionados con DVC
