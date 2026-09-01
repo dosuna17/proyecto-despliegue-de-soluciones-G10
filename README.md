@@ -47,6 +47,35 @@ Los datos se gestionan con DVC. Los artefactos locales de MLflow, datos crudos,
 credenciales y pesos de modelos se excluyen de Git; los modelos candidatos y de
 producción se deben versionar en MLflow Model Registry.
 
+## Arquitectura de datos y experimentación
+
+```text
+                    GitHub
+                      │
+                 código y metadatos
+                      │
+                      ▼
+             Proyecto G5 (repo)
+              │             │
+        archivos .dvc     código de entrenamiento
+              │             │
+              ▼             ▼
+             DVC          MLflow Tracking
+              │             │
+              ▼             ├── Backend store: SQLite (EC2)
+ S3 / dvc-proyecto/files/  │
+                            ▼
+                  S3 / dvc-proyecto/mlflow-artifacts/
+```
+
+- **GitHub** conserva el código y los metadatos de DVC, pero no datos crudos,
+  pesos de modelos ni credenciales.
+- **DVC** versiona los conjuntos de datos almacenados en
+  `s3://dvc-proyecto/files/`.
+- **MLflow** registra los experimentos en un backend SQLite alojado en EC2 y
+  almacena artefactos, métricas y modelos en
+  `s3://dvc-proyecto/mlflow-artifacts/`.
+
 ## MLflow Tracking Server
 
 El proyecto utiliza un servidor MLflow desplegado en AWS EC2.
