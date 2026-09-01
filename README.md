@@ -85,5 +85,5 @@ El proyecto utiliza un servidor MLflow desplegado en AWS EC2.
 Todos los experimentos deben utilizar la siguiente variable de entorno:
 
 ```bash
-export MLFLOW_TRACKING_URI=http://32.194.151.154:5000
+export MLFLOW_TRACKING_URI=http://<EC2_PUBLIC_IP>:5000
 ```
