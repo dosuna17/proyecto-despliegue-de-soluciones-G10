@@ -1,0 +1,15 @@
+# MLflow local tracking artifacts
+mlruns/
+
+# Secrets and credentials
+*.pem
+.env
+.env.*
+!.env.example
+
+# Python bytecode caches
+__pycache__/
+
+# Raw source data must never be committed
+data/raw/*
+!data/raw/.gitkeep
