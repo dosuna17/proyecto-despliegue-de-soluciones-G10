@@ -1,0 +1,4 @@
+# Solo se versiona esta referencia de carpeta; no pesos ni artefactos pesados.
+*
+!.gitignore
+
