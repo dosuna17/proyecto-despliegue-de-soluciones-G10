@@ -76,6 +76,32 @@ producción se deben versionar en MLflow Model Registry.
   almacena artefactos, métricas y modelos en
   `s3://dvc-proyecto/mlflow-artifacts/`.
 
+## Despliegue de la API
+
+```text
+Dashboard
+   │
+   │ HTTP :8000
+   ▼
+┌──────────────────────┐
+│   Docker + FastAPI   │
+│                      │
+│ GET /health          │
+│ POST /predict        │  ← pendiente
+└──────────┬───────────┘
+           │
+           │ MLFLOW_TRACKING_URI
+           ▼
+┌──────────────────────┐
+│   MLflow :5000       │
+│      EC2             │
+└──────────────────────┘
+```
+
+El contenedor expone FastAPI en el puerto `8000`. El endpoint `GET /health`
+permite comprobar la disponibilidad del servicio; `POST /predict` se añadirá
+para cargar el modelo registrado desde MLflow y realizar inferencias.
+
 ## MLflow Tracking Server
 
 El proyecto utiliza un servidor MLflow desplegado en AWS EC2.
