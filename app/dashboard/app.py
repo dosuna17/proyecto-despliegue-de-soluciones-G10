@@ -1,6 +1,7 @@
 import math
 import random
 import mock_data
+import model_interface as model
 import streamlit as st
 import plotly.graph_objects as go
 
@@ -131,23 +132,20 @@ else:
     )
 
 # Mostramos la etapa del sueño predicha y la confianza del modelo para la época seleccionada:
-    epoca_actual = etapas[st.session_state.epoch_index]
-    st.write(f"Época {st.session_state.epoch_index}: predicha **{epoca_actual}**")
+    resultado = model.obtener_prediccion(st.session_state.epoch_index)
+    prediccion = resultado["prediccion"]
+    conf = resultado["confianza"]
+    probabilidades = resultado["probabilidades"]
 
-    st.write(f"Confianza: {int(confianza[st.session_state.epoch_index] * 100)}%")
-
-    clases = ["W", "N1", "N2", "N3", "REM"]
-    prediccion = etapas[st.session_state.epoch_index]
-    conf = confianza[st.session_state.epoch_index]
-    resto = (1 - conf) / 4
+    st.write(f"Época {st.session_state.epoch_index}: predicha **{prediccion}**")
+    st.write(f"Confianza: {int(conf * 100)}%")
 
     prob_cols = st.columns(5)
-    for col, clase in zip(prob_cols, clases):
-        prob = conf if clase == prediccion else resto
-        col.metric(clase, f"{int(prob * 100)}%")
+    for col, clase in zip(prob_cols, probabilidades):
+        col.metric(clase, f"{int(probabilidades[clase] * 100)}%")
 
 # Agregamos la etiqueta experta correspondiente a la época seleccionada y mostramos una advertencia si la predicción del modelo no coincide con la etiqueta experta:       
-    etiqueta_experta = etiquetas_expertas[st.session_state.epoch_index]
+    etiqueta_experta = resultado["etiqueta_experta"]
     st.write(f"Etiqueta experta del hipnograma original: **{etiqueta_experta}**")
 
     if etiqueta_experta != prediccion:
