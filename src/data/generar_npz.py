@@ -32,7 +32,7 @@ from segmentation import extract_epochs, class_distribution   # noqa: E402
 # ---------------------------------------------------------------------
 # CONFIGURACIÓN -- ajusta rutas si hace falta
 # ---------------------------------------------------------------------
-DATA_DIR = Path("data/raw/sleep-edfx/sleep-cassette")
+DATA_DIR = Path("data/sleep-edfx/sleep-cassette")
 OUT_DIR = Path("data/interim/epochs_por_sujeto")
 CHANNEL_PICKS = ["EEG Fpz-Cz"]  # confirmado: canal único usado por el equipo
 

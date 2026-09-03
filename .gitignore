@@ -19,3 +19,10 @@ mlflow.db
 # Archivos .npz generados localmente (derivados, no se versionan en git)
 data/interim/*
 !data/interim/.gitkeep
+
+# Ambiente virtual de Python (local, nunca se sube)
+venv/
+
+# Herramientas usadas solo para depuración/revisión, no forman parte del proyecto
+dump_repo.py
+repo_dump.txt
