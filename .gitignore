@@ -13,4 +13,5 @@ __pycache__/
 # Raw source data must never be committed
 data/raw/*
 !data/raw/.gitkeep
+!data/raw/*.dvc
 mlflow.db
