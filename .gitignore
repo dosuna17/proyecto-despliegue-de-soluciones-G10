@@ -15,3 +15,7 @@ data/raw/*
 !data/raw/.gitkeep
 !data/raw/*.dvc
 mlflow.db
+
+# Archivos .npz generados localmente (derivados, no se versionan en git)
+data/interim/*
+!data/interim/.gitkeep
