@@ -11,9 +11,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import mlflow
 import pandas as pd
+from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.class_weight import compute_sample_weight
 from xgboost import XGBClassifier
 
+from src.data.segmentation import CLASS_NAMES, INT_TO_CLASS
 from src.evaluation.metrics import evaluate_classification
 
 
@@ -57,15 +59,20 @@ def main() -> None:
 
     X_train = train_df[feature_columns]
     X_test = test_df[feature_columns]
-    y_train = train_df[TARGET_COLUMN]
-    y_test = test_df[TARGET_COLUMN]
+    y_train_raw = train_df[TARGET_COLUMN]
+    y_test_raw = test_df[TARGET_COLUMN]
 
-    class_labels = sorted(train_df[TARGET_COLUMN].unique())
+    y_train_names = y_train_raw.map(INT_TO_CLASS).fillna(y_train_raw).astype(str)
+    y_test_names = y_test_raw.map(INT_TO_CLASS).fillna(y_test_raw).astype(str)
+
+    label_encoder = LabelEncoder()
+    label_encoder.fit(CLASS_NAMES)
+    y_train = label_encoder.transform(y_train_names)
     sample_weights = compute_sample_weight(class_weight="balanced", y=y_train)
 
     fixed_params = {
         **FIXED_PARAMS,
-        "num_class": len(class_labels),
+        "num_class": len(CLASS_NAMES),
     }
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
@@ -75,21 +82,25 @@ def main() -> None:
     print(f"Experiment: {experiment.name}")
     print(f"Train shape: {X_train.shape}")
     print(f"Test shape: {X_test.shape}")
-    print(f"Classes: {class_labels}")
+    print(f"Classes: {CLASS_NAMES}")
 
-    with mlflow.start_run(experiment_id=experiment.experiment_id):
+    with mlflow.mlflow.start_run(experiment_id=experiment.experiment_id, run_name="xgboost_baseline"):
+        mlflow.set_tag("model_type", "baseline")
+        mlflow.set_tag("signals_used", "EEG Fpz-Cz")
+        mlflow.set_tag("stage", "final_model")
         model = XGBClassifier(**fixed_params, **BEST_PARAMS)
         model.fit(X_train, y_train, sample_weight=sample_weights)
 
-        y_pred = model.predict(X_test)
+        y_pred_encoded = model.predict(X_test)
+        y_pred = label_encoder.inverse_transform(y_pred_encoded)
         metrics = evaluate_classification(
-            y_true=y_test,
+            y_true=y_test_names,
             y_pred=y_pred,
-            class_labels=class_labels,
+            class_labels=CLASS_NAMES,
         )
 
         mlflow.log_params(BEST_PARAMS)
-        mlflow.log_param("num_class", len(class_labels))
+        mlflow.log_param("num_class", len(CLASS_NAMES))
         mlflow.log_param("n_features", len(feature_columns))
         mlflow.log_param("excluded_id_columns", ",".join(ID_COLUMNS))
 
