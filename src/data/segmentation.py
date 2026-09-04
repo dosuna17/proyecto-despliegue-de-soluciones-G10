@@ -10,8 +10,8 @@ Esquema de etiquetas (según especificación del proyecto):
 
     Este módulo:
       1. Descarta cualquier anotación que no sea una de las 6 clases
-         R&K permitidas -> se eliminan '?' y cualquier otra
-         etiqueta no reconocida.
+         R&K permitidas -> se eliminan 'M' y '?' (y cualquier otra
+         etiqueta no reconocida).
       2. Fusiona los estadíos '3' y '4' en una sola clase "N3".
       3. Mapea las 5 clases resultantes a enteros:
              W   -> 0
@@ -298,6 +298,7 @@ def concatenate_datasets(datasets: Sequence[EpochDataset]) -> EpochDataset:
         dropped_epochs=sum(ds.dropped_epochs for ds in datasets),
     )
 
+
 def concatenate_datasets_by_split(
     datasets: Sequence[EpochDataset],
     subject_to_split: Dict[str, str],
@@ -307,6 +308,16 @@ def concatenate_datasets_by_split(
     Filtra una lista de EpochDataset (uno por sujeto/noche) quedándose solo
     con los que pertenecen a `target_split` ("train" o "test"), y los
     concatena con concatenate_datasets.
+
+    IMPORTANTE: el nombre de archivo / recording_id NO contiene esta
+    información -- el split se decide aparte (ver split_subjects.ipynb,
+    que genera SC-subjects-split.xlsx) y debe cruzarse explícitamente por
+    subject_code. `subject_to_split` es ese mapeo, típicamente construido así:
+
+        import pandas as pd
+        split_df = pd.read_excel("SC-subjects-split.xlsx")
+        split_df["subject_code"] = split_df["subject"].astype(str).str.zfill(2)
+        subject_to_split = dict(zip(split_df["subject_code"], split_df["split"]))
     """
     selected = [ds for ds in datasets if subject_to_split.get(ds.subject_code) == target_split]
     if not selected:
@@ -314,6 +325,55 @@ def concatenate_datasets_by_split(
             f"Ningún dataset pertenece al split '{target_split}' según subject_to_split"
         )
     return concatenate_datasets(selected)
+
+
+def trim_wake_edges(dataset: EpochDataset, buffer_epochs: int = 60) -> EpochDataset:
+    """
+    Recorta el exceso de vigilia (W) al inicio y al final de UNA grabación,
+    dejando un buffer alrededor de la primera y última época de sueño real.
+
+    Esto reduce el desbalance hacia W sin descartar información real: no
+    toca los despertares (arousals) que ocurren DENTRO de la noche, solo el
+    tramo de vigilia prolongada antes de dormirse y después de despertar
+    (el sujeto acostado con el equipo puesto, sin actividad de sueño).
+
+    buffer_epochs: cuántas épocas de W se conservan antes de la primera y
+    después de la última época de sueño real (default 60 = 30 minutos,
+    valor típico en literatura de sleep staging, p. ej. DeepSleepNet).
+
+    Debe aplicarse por grabación individual, ANTES de concatenar varios
+    sujetos -- los límites de recorte son específicos de cada noche.
+    """
+    wake_int = CLASS_TO_INT["W"]
+    non_wake_idx = np.where(dataset.y != wake_int)[0]
+
+    if len(non_wake_idx) == 0:
+        raise ValueError(
+            f"La grabación {dataset.recording_id} no tiene ninguna época de sueño real "
+            f"(todo es W) -- no se puede recortar."
+        )
+
+    first_sleep = non_wake_idx.min()
+    last_sleep = non_wake_idx.max()
+    start = max(0, first_sleep - buffer_epochs)
+    end = min(len(dataset.y), last_sleep + buffer_epochs + 1)
+
+    n_removed = len(dataset.y) - (end - start)
+
+    return EpochDataset(
+        recording_id=dataset.recording_id,
+        subject_code=dataset.subject_code,
+        night=dataset.night,
+        X=dataset.X[start:end],
+        y=dataset.y[start:end],
+        recording_ids=dataset.recording_ids[start:end],
+        subject_codes=dataset.subject_codes[start:end],
+        channel_names=dataset.channel_names,
+        sfreq=dataset.sfreq,
+        signal_unit=dataset.signal_unit,
+        dropped_epochs=dataset.dropped_epochs + n_removed,
+    )
+
 
 def class_distribution(dataset: EpochDataset) -> Dict[str, int]:
     """Conteo de épocas por clase final, en formato legible."""
