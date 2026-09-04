@@ -298,6 +298,22 @@ def concatenate_datasets(datasets: Sequence[EpochDataset]) -> EpochDataset:
         dropped_epochs=sum(ds.dropped_epochs for ds in datasets),
     )
 
+def concatenate_datasets_by_split(
+    datasets: Sequence[EpochDataset],
+    subject_to_split: Dict[str, str],
+    target_split: str,
+) -> EpochDataset:
+    """
+    Filtra una lista de EpochDataset (uno por sujeto/noche) quedándose solo
+    con los que pertenecen a `target_split` ("train" o "test"), y los
+    concatena con concatenate_datasets.
+    """
+    selected = [ds for ds in datasets if subject_to_split.get(ds.subject_code) == target_split]
+    if not selected:
+        raise ValueError(
+            f"Ningún dataset pertenece al split '{target_split}' según subject_to_split"
+        )
+    return concatenate_datasets(selected)
 
 def class_distribution(dataset: EpochDataset) -> Dict[str, int]:
     """Conteo de épocas por clase final, en formato legible."""
