@@ -10,21 +10,17 @@ Esquema de etiquetas (según especificación del proyecto):
 
     Este módulo:
       1. Descarta cualquier anotación que no sea una de las 6 clases
-         R&K permitidas -> se eliminan '?' y cualquier otra
-         etiqueta no reconocida.
+         R&K permitidas -> se eliminan 'M' y '?' (y cualquier otra
+         etiqueta no reconocida).
       2. Fusiona los estadíos '3' y '4' en una sola clase "N3".
-      3. Mapea las 5 clases resultantes a enteros:
-             W   -> 0
-             N1  -> 1   (antes '1')
-             N2  -> 2   (antes '2')
-             N3  -> 3   (antes '3' y '4' fusionados)
-             REM -> 4   (antes 'R')
+      3. Devuelve las 5 clases resultantes como nombres explícitos:
+             W, N1, N2, N3, REM
 
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import mne
@@ -57,8 +53,11 @@ _STAGE_TO_CLASS = {
     "R": "REM",
 }
 
-# Clase final -> entero usado por el modelo
-CLASS_TO_INT: Dict[str, int] = {"W": 0, "N1": 1, "N2": 2, "N3": 3, "REM": 4}
+# Orden canonico de clases usado por datasets, metricas, graficas y modelos.
+CLASS_NAMES = ["W", "N1", "N2", "N3", "REM"]
+
+# Mapeos auxiliares para compatibilidad con notebooks/artefactos antiguos.
+CLASS_TO_INT: Dict[str, int] = {name: idx for idx, name in enumerate(CLASS_NAMES)}
 INT_TO_CLASS: Dict[int, str] = {v: k for k, v in CLASS_TO_INT.items()}
 
 
@@ -98,7 +97,7 @@ class EpochDataset:
     subject_code: str      # sujeto persistente entre noches, p. ej. '00'
     night: str             # número de noche, p. ej. '1'
     X: np.ndarray          # (n_epochs, n_channels, n_samples_por_epoca)
-    y: np.ndarray          # (n_epochs,) enteros según CLASS_TO_INT
+    y: np.ndarray          # (n_epochs,) nombres de clase en CLASS_NAMES
     recording_ids: np.ndarray   # (n_epochs,) str — recording_id repetido, uno por época
     subject_codes: np.ndarray   # (n_epochs,) str — subject_code repetido, uno por época
     channel_names: List[str]
@@ -172,7 +171,7 @@ def extract_epochs(
 ) -> EpochDataset:
     """
     Segmenta la señal continua de una grabación (sujeto/noche) en épocas
-    fijas de 30s y les asigna una etiqueta entera, descartando toda época
+    fijas de 30s y les asigna una etiqueta de texto, descartando toda época
     cuya etiqueta no sea una de las 5 clases permitidas (W, N1, N2, N3, REM).
 
     channel_picks: lista opcional de nombres de canal a conservar
@@ -223,13 +222,13 @@ def extract_epochs(
             continue
 
         X_list.append(data[:, start_sample:end_sample])
-        y_list.append(CLASS_TO_INT[class_name])
+        y_list.append(class_name)
 
     if not X_list:
         raise ValueError(f"No se extrajo ninguna época válida para la grabación {recording_id}")
 
     X = np.stack(X_list, axis=0)
-    y = np.array(y_list, dtype=np.int64)
+    y = np.array(y_list, dtype=str)
 
     subject_code, night = parse_recording_id(recording_id)
     n_epochs = len(y)
@@ -299,11 +298,102 @@ def concatenate_datasets(datasets: Sequence[EpochDataset]) -> EpochDataset:
     )
 
 
+def concatenate_datasets_by_split(
+    datasets: Sequence[EpochDataset],
+    subject_to_split: Dict[str, str],
+    target_split: str,
+) -> EpochDataset:
+    """
+    Filtra una lista de EpochDataset (uno por sujeto/noche) quedándose solo
+    con los que pertenecen a `target_split` ("train" o "test"), y los
+    concatena con concatenate_datasets.
+
+    IMPORTANTE: el nombre de archivo / recording_id NO contiene esta
+    información -- el split se decide aparte (ver split_subjects.ipynb,
+    que genera SC-subjects-split.xlsx) y debe cruzarse explícitamente por
+    subject_code. `subject_to_split` es ese mapeo, típicamente construido así:
+
+        import pandas as pd
+        split_df = pd.read_excel("SC-subjects-split.xlsx")
+        split_df["subject_code"] = split_df["subject"].astype(str).str.zfill(2)
+        subject_to_split = dict(zip(split_df["subject_code"], split_df["split"]))
+    """
+    selected = [ds for ds in datasets if subject_to_split.get(ds.subject_code) == target_split]
+    if not selected:
+        raise ValueError(
+            f"Ningún dataset pertenece al split '{target_split}' según subject_to_split"
+        )
+    return concatenate_datasets(selected)
+
+
+def trim_wake_edges(dataset: EpochDataset, buffer_epochs: int = 60) -> EpochDataset:
+    """
+    Recorta el exceso de vigilia (W) al inicio y al final de UNA grabación,
+    dejando un buffer alrededor de la primera y última época de sueño real.
+
+    Esto reduce el desbalance hacia W sin descartar información real: no
+    toca los despertares (arousals) que ocurren DENTRO de la noche, solo el
+    tramo de vigilia prolongada antes de dormirse y después de despertar
+    (el sujeto acostado con el equipo puesto, sin actividad de sueño).
+
+    buffer_epochs: cuántas épocas de W se conservan antes de la primera y
+    después de la última época de sueño real (default 60 = 30 minutos,
+    valor típico en literatura de sleep staging, p. ej. DeepSleepNet).
+
+    Debe aplicarse por grabación individual, ANTES de concatenar varios
+    sujetos -- los límites de recorte son específicos de cada noche.
+    """
+    wake_label = "W"
+    labels = np.array([label_to_class_name(label) for label in dataset.y])
+    non_wake_idx = np.where(labels != wake_label)[0]
+
+    if len(non_wake_idx) == 0:
+        raise ValueError(
+            f"La grabación {dataset.recording_id} no tiene ninguna época de sueño real "
+            f"(todo es W) -- no se puede recortar."
+        )
+
+    first_sleep = non_wake_idx.min()
+    last_sleep = non_wake_idx.max()
+    start = max(0, first_sleep - buffer_epochs)
+    end = min(len(dataset.y), last_sleep + buffer_epochs + 1)
+
+    n_removed = len(dataset.y) - (end - start)
+
+    return EpochDataset(
+        recording_id=dataset.recording_id,
+        subject_code=dataset.subject_code,
+        night=dataset.night,
+        X=dataset.X[start:end],
+        y=dataset.y[start:end],
+        recording_ids=dataset.recording_ids[start:end],
+        subject_codes=dataset.subject_codes[start:end],
+        channel_names=dataset.channel_names,
+        sfreq=dataset.sfreq,
+        signal_unit=dataset.signal_unit,
+        dropped_epochs=dataset.dropped_epochs + n_removed,
+    )
+
+
+def label_to_class_name(label: Union[str, int, np.integer]) -> str:
+    """Convierte una etiqueta nueva o antigua al nombre canonico de clase."""
+
+    if isinstance(label, str):
+        if label not in CLASS_NAMES:
+            raise ValueError(f"Etiqueta desconocida: {label}")
+        return label
+
+    class_name = INT_TO_CLASS.get(int(label))
+    if class_name is None:
+        raise ValueError(f"Etiqueta numerica desconocida: {label}")
+    return class_name
+
+
 def class_distribution(dataset: EpochDataset) -> Dict[str, int]:
     """Conteo de épocas por clase final, en formato legible."""
-    counts = {name: 0 for name in CLASS_TO_INT}
+    counts = {name: 0 for name in CLASS_NAMES}
     for label in dataset.y:
-        counts[INT_TO_CLASS[int(label)]] += 1
+        counts[label_to_class_name(label)] += 1
     return counts
 
 
