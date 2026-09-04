@@ -26,3 +26,7 @@ venv/
 # Herramientas usadas solo para depuración/revisión, no forman parte del proyecto
 dump_repo.py
 repo_dump.txt
+
+# Pesos de modelos entrenados (nunca van a git, se manejan manual/MLflow)
+*.pth
+test_metrics_final.json
