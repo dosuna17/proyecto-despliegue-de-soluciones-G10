@@ -36,7 +36,7 @@ import torch
 from sklearn.model_selection import GroupKFold
 from torch.utils.data import Dataset, DataLoader
 
-NPZ_DIR = Path("data/interim/epochs_por_sujeto")
+NPZ_DIR = Path("data/interim/epochs_por_sujeto_recortado")  # antes: epochs_por_sujeto
 SPLIT_XLSX_PATH = Path("data/raw/SC-subjects-split.xlsx")
 
 N_FOLDS_DEFAULT = 5           # decisión propia (cross-validation, como Santiago)
