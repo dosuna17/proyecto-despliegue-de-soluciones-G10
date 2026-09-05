@@ -7,6 +7,14 @@ de correr este script, por ejemplo (PowerShell):
     $env:MLFLOW_TRACKING_URI = "http://<EC2_PUBLIC_IP>:5000"
     python src\\models\\train.py
 
+MODO OFFLINE (recomendado dado lo inestable que ha sido la EC2 del
+equipo): si NO configuras MLFLOW_TRACKING_URI, el script cae
+automáticamente a un tracking LOCAL (sqlite, cero red) -- así puedes
+entrenar sin depender de que la EC2 esté prendida. Al terminar, corre
+sync_to_mlflow.py (una sola vez, con la EC2 ya prendida) para subir
+todo de golpe (params, tags, y el HISTORIAL completo de métricas por
+época) al MLflow real del equipo.
+
 Hiperparámetros de entrenamiento tomados del paper (Sección III.B,
 Sleep-EDF): Adam(lr=1e-4, betas=(0.9,0.999)), L2 weight decay=1e-3
 (aplicado dentro de TinySleepNet.l2_regularization_loss, ver cnn.py),
@@ -19,11 +27,11 @@ validación, deteniendo el entrenamiento si no mejora tras
 `patience` épocas -- el propio paper ya usa un criterio similar
 ("the model that achieved the best overall accuracy was kept").
 
-NOTA: src/evaluation/metrics.py todavía no existe (a la fecha de
-escribir esto). Se usa una función de métricas temporal (ver
-`compute_metrics` más abajo) con exactamente las llaves acordadas
-con Santiago por chat, para que el swap sea directo cuando él la
-publique.
+Métricas: usa src/evaluation/metrics.py real de Santiago
+(evaluate_classification()), integrado el 9/4 tras confirmación de
+María José en el chat del equipo. compute_metrics() más abajo es un
+envoltorio delgado que mapea enteros->nombres de clase y reconstruye
+el formato de dict plano que ya usaba el resto del pipeline.
 """
 from __future__ import annotations
 
@@ -36,15 +44,7 @@ import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.metrics import (
-    accuracy_score,
-    balanced_accuracy_score,
-    cohen_kappa_score,
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-)
+from sklearn.metrics import f1_score  # se sigue usando para train_macro_f1 (liviano, cada epoch)
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))  # para importar src/data, src/models
 
@@ -57,6 +57,8 @@ from data.dataset import (  # noqa: E402
     DEFAULT_BATCH_SIZE,
     DEFAULT_SEQ_LENGTH,
 )
+from data.segmentation import INT_TO_CLASS  # noqa: E402 -- mapeo entero->nombre de clase
+from evaluation.metrics import evaluate_classification  # noqa: E402 -- metrics.py real de Santiago
 from models.cnn import TinySleepNet, TinySleepNetConfig, build_class_weighted_loss  # noqa: E402
 
 CLASS_NAMES = ["W", "N1", "N2", "N3", "REM"]
@@ -81,38 +83,43 @@ MAX_EPOCHS_PER_RECORDING = 500
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Tracking local (modo offline): usado automáticamente si no hay
+# MLFLOW_TRACKING_URI configurada. Ver sync_to_mlflow.py para subir
+# esto al MLflow real del equipo cuando la EC2 esté disponible.
+LOCAL_TRACKING_DB = "mlflow_local_cv.db"
+
 
 # ---------------------------------------------------------------------
-# 1. Métricas (temporal -- ver docstring del módulo)
+# 1. Métricas -- usa evaluation/metrics.py real de Santiago (ya
+#    integrado). Mapea las etiquetas enteras (0-4, ver segmentation.py)
+#    a nombres de clase antes de llamar evaluate_classification(), que
+#    espera class_labels como nombres (ver metrics.py de Santiago).
+#    Reconstruye el mismo dict plano que usaba la versión temporal, para
+#    que ningún otro código de este archivo (ni train_final.py, que
+#    importa esta función) necesite cambiar.
 # ---------------------------------------------------------------------
 def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, n_classes: int = 5) -> Dict:
     """
-    Calcula exactamente las llaves acordadas con Santiago por chat:
-    accuracy, macro_f1, balanced_accuracy, cohens_kappa,
-    confusion_matrix, precision_per_class, recall_per_class, f1_per_class.
+    Calcula las mismas llaves de siempre (accuracy, macro_f1,
+    balanced_accuracy, cohens_kappa, confusion_matrix,
+    precision_per_class, recall_per_class, f1_per_class), ahora
+    usando evaluate_classification() real de Santiago por debajo.
     """
-    labels = list(range(n_classes))
+    y_true_named = np.array([INT_TO_CLASS[int(i)] for i in y_true])
+    y_pred_named = np.array([INT_TO_CLASS[int(i)] for i in y_pred])
+
+    metrics_obj = evaluate_classification(y_true_named, y_pred_named, class_labels=CLASS_NAMES)
+
+    per_class = metrics_obj.per_class.set_index("class")
     return {
-        "accuracy": accuracy_score(y_true, y_pred),
-        "macro_f1": f1_score(y_true, y_pred, labels=labels, average="macro", zero_division=0),
-        "balanced_accuracy": balanced_accuracy_score(y_true, y_pred),
-        "cohens_kappa": cohen_kappa_score(y_true, y_pred, labels=labels),
-        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=labels).tolist(),
-        "precision_per_class": {
-            CLASS_NAMES[i]: v for i, v in enumerate(
-                precision_score(y_true, y_pred, labels=labels, average=None, zero_division=0)
-            )
-        },
-        "recall_per_class": {
-            CLASS_NAMES[i]: v for i, v in enumerate(
-                recall_score(y_true, y_pred, labels=labels, average=None, zero_division=0)
-            )
-        },
-        "f1_per_class": {
-            CLASS_NAMES[i]: v for i, v in enumerate(
-                f1_score(y_true, y_pred, labels=labels, average=None, zero_division=0)
-            )
-        },
+        "accuracy": metrics_obj.summary["accuracy"],
+        "macro_f1": metrics_obj.summary["macro_f1"],
+        "balanced_accuracy": metrics_obj.summary["balanced_accuracy"],
+        "cohens_kappa": metrics_obj.summary["cohens_kappa"],
+        "confusion_matrix": metrics_obj.confusion_matrix.values.tolist(),
+        "precision_per_class": per_class["precision_per_class"].to_dict(),
+        "recall_per_class": per_class["recall_per_class"].to_dict(),
+        "f1_per_class": per_class["f1_per_class"].to_dict(),
     }
 
 
@@ -247,17 +254,21 @@ def train_one_fold(
 def main():
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
     if not tracking_uri:
-        raise RuntimeError(
-            "MLFLOW_TRACKING_URI no está configurada. Corre primero:\n"
-            '  $env:MLFLOW_TRACKING_URI = "http://<EC2_PUBLIC_IP>:5000"   (PowerShell)'
-        )
+        tracking_uri = f"sqlite:///{LOCAL_TRACKING_DB}"
+        print(f"[MODO OFFLINE] MLFLOW_TRACKING_URI no configurada -- "
+              f"logueando localmente en {LOCAL_TRACKING_DB}")
+        print(f"Cuando termine, corre sync_to_mlflow.py (con la EC2 "
+              f"prendida) para subir todo al MLflow del equipo.\n")
+    else:
+        print(f"[MODO REMOTO] Logueando en vivo a {tracking_uri}\n")
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment("sleep-staging-advanced")
 
     train_codes, test_codes = get_train_test_subject_codes()
     folds = make_subject_kfold_splits(train_codes)
 
-    with mlflow.start_run(run_name="tinysleepnet_cv"):
+    mlflow.start_run(run_name="tinysleepnet_cv")
+    try:
         mlflow.set_tag("model_type", "advanced")
         mlflow.set_tag("signals_used", "EEG Fpz-Cz")
         mlflow.log_params(
@@ -291,6 +302,12 @@ def main():
         print(f"\n=== CV completa: macro_f1 = {mean_cv_macro_f1:.4f} +/- {std_cv_macro_f1:.4f} ===")
         print("Siguiente paso: entrenar el modelo final sobre TODO el train "
               "(sin fold), y evaluar UNA sola vez sobre el test reservado.")
+    finally:
+        try:
+            mlflow.end_run()
+        except Exception as e:
+            print(f"\n[AVISO] No se pudo cerrar limpiamente el run "
+                  f"(no afecta los resultados ya logueados): {e}")
 
 
 if __name__ == "__main__":

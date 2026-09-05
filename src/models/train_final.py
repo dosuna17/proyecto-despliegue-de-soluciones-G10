@@ -75,6 +75,11 @@ VAL_FRACTION = 0.15  # % de los sujetos de train reservado para early stopping
 # ahí para reaccionar. El TEST se carga completo, sin recortar.
 MAX_EPOCHS_PER_RECORDING = 500
 
+# Tracking local (modo offline): usado automáticamente si no hay
+# MLFLOW_TRACKING_URI configurada. Nombre distinto al de train.py para
+# poder correr ambos scripts sin que se pisen los archivos .db.
+LOCAL_TRACKING_DB = "mlflow_local_final.db"
+
 # Checkpoint local periódico: guarda el mejor modelo cada N épocas
 # (no solo al final), para no perder todo el progreso si algo falla
 # tarde en la noche (corte de luz, error de red, etc.)
@@ -118,10 +123,13 @@ def save_confusion_matrix_plot(cm: list, class_names: list, out_path: str) -> No
 def main():
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
     if not tracking_uri:
-        raise RuntimeError(
-            "MLFLOW_TRACKING_URI no está configurada. Corre primero:\n"
-            '  $env:MLFLOW_TRACKING_URI = "http://<EC2_PUBLIC_IP>:5000"   (PowerShell)'
-        )
+        tracking_uri = f"sqlite:///{LOCAL_TRACKING_DB}"
+        print(f"[MODO OFFLINE] MLFLOW_TRACKING_URI no configurada -- "
+              f"logueando localmente en {LOCAL_TRACKING_DB}")
+        print(f"Cuando termine, corre sync_to_mlflow.py {LOCAL_TRACKING_DB} "
+              f"(con la EC2 prendida) para subir todo al MLflow del equipo.\n")
+    else:
+        print(f"[MODO REMOTO] Logueando en vivo a {tracking_uri}\n")
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment("sleep-staging-advanced")
 
@@ -149,7 +157,18 @@ def main():
     criterion = build_class_weighted_loss(class_weights, device=DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=ADAM_BETAS)
 
-    with mlflow.start_run(run_name="tinysleepnet_final"):
+    # NOTA (descubierto en la corrida nocturna del 9/3-9/4): usar
+    # "with mlflow.start_run(...):" es riesgoso en corridas largas sin
+    # supervisión, porque al cerrar el bloque `with`, MLflow intenta
+    # AUTOMÁTICAMENTE una llamada de red más (para registrar la URL del
+    # run) que NO está bajo nuestro control y no se puede envolver en
+    # try/except desde afuera. Si la red falla justo en ese instante
+    # (ej. la EC2 se apagó por inactividad a mitad de la noche), el
+    # script se cae con un traceback -- aunque todo el trabajo real ya
+    # esté guardado localmente para ese punto. Se maneja el run de
+    # forma manual para poder envolver también ESE paso final.
+    mlflow.start_run(run_name="tinysleepnet_final")
+    try:
         mlflow.set_tag("model_type", "advanced")
         mlflow.set_tag("signals_used", "EEG Fpz-Cz")
         mlflow.set_tag("stage", "final_model")
@@ -290,6 +309,15 @@ def main():
             print(f"  - {os.path.abspath(model_path)}")
             print(f"  - {os.path.abspath(metrics_path)}")
             print("Envíaselos a Daniel para que los suba manualmente, o reintenta el logueo a MLflow.")
+    finally:
+        # Cierre del run, también protegido: si la red falla justo aquí
+        # (el bug descubierto anoche), no debe tumbar el script -- todo
+        # lo que importa (modelo, métricas, matriz) ya está en disco.
+        try:
+            mlflow.end_run()
+        except Exception as e:
+            print(f"\n[AVISO] No se pudo cerrar limpiamente el run en MLflow "
+                  f"(no afecta los resultados, ya están guardados localmente): {e}")
 
     print("\nListo. Revisa el run 'tinysleepnet_final' en MLflow para armar la "
           "tabla comparativa contra el baseline de Santiago.")
