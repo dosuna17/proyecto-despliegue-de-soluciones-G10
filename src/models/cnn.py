@@ -12,8 +12,13 @@ el código, no el texto del paper, por ser la fuente más confiable para
 detalles de implementación.
 
 Contrato de entrada (confirmado contra segmentation.py / loader.py del
-proyecto): cada época es (1 canal, 3000 muestras) = EEG Fpz-Cz a 100 Hz,
-30s por época. n_classes=5 (W, N1, N2, N3, REM).
+proyecto): cada época es originalmente (1 canal, 3000 muestras) = EEG
+Fpz-Cz a 100 Hz, 30s por época. n_classes=5 (W, N1, N2, N3, REM).
+
+Entrega 3 -- extensión multicanal: el número de canales de entrada es
+ahora configurable vía TinySleepNetConfig.n_input_channels (1=EEG solo,
+2=EEG+EOG, 3=EEG+EOG+EMG), apilando los canales desde la primera capa
+convolucional (opción simple, documentar en el informe si se cambia).
 """
 from __future__ import annotations
 
@@ -37,6 +42,7 @@ class TinySleepNetConfig:
     sampling_rate: int = 100          # Hz (confirmado: segmentation.py)
     input_size: int = 3000            # muestras por época (confirmado: 30s * 100Hz)
     n_classes: int = 5                # W, N1, N2, N3, REM (confirmado: segmentation.py)
+    n_input_channels: int = 1         # Entrega 3: 1=EEG solo, 2=EEG+EOG, 3=EEG+EOG+EMG
 
     # Bloque CNN (valores reales del repo oficial, ver docstring del módulo)
     cnn_filters: int = 128
@@ -83,7 +89,7 @@ class TinySleepNetCNN(nn.Module):
         first_filter_size = int(fs / 2.0)   # = 50 para fs=100
         first_filter_stride = int(fs / 16.0)  # = 6 para fs=100 (ver nota de fidelidad arriba)
 
-        self.block1 = _ConvBNReLU(1, config.cnn_filters, first_filter_size, first_filter_stride)
+        self.block1 = _ConvBNReLU(config.n_input_channels, config.cnn_filters, first_filter_size, first_filter_stride)
         self.pool1 = nn.MaxPool1d(kernel_size=8, stride=8)
         self.drop1 = nn.Dropout(config.cnn_dropout)
 
@@ -96,7 +102,7 @@ class TinySleepNetCNN(nn.Module):
         self.drop2 = nn.Dropout(config.cnn_dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch, 1, input_size)
+        # x: (batch, n_input_channels, input_size)
         x = self.block1(x)
         x = self.pool1(x)
         x = self.drop1(x)
@@ -125,7 +131,7 @@ class TinySleepNet(nn.Module):
 
         # Determinar dinámicamente la dimensión de salida del CNN
         with torch.no_grad():
-            dummy = torch.zeros(1, 1, config.input_size)
+            dummy = torch.zeros(1, config.n_input_channels, config.input_size)
             cnn_out_dim = self.cnn(dummy).shape[-1]
         self.cnn_out_dim = cnn_out_dim
 
@@ -152,9 +158,9 @@ class TinySleepNet(nn.Module):
     ):
         """
         Si use_rnn=False:
-            x: (batch, 1, input_size) -> logits: (batch, n_classes)
+            x: (batch, n_input_channels, input_size) -> logits: (batch, n_classes)
         Si use_rnn=True:
-            x: (batch, seq_length, 1, input_size) -> logits: (batch, seq_length, n_classes)
+            x: (batch, seq_length, n_input_channels, input_size) -> logits: (batch, seq_length, n_classes)
             `hidden` permite pasar el estado de la LSTM entre mini-batches
             consecutivos de la misma secuencia larga (carry-over de estado,
             como hace el repo oficial); si es None, se inicializa en ceros.
@@ -238,13 +244,22 @@ if __name__ == "__main__":
     # Prueba rápida de forma (shapes), sin datos reales
     cfg = TinySleepNetConfig(use_rnn=False)
     model = TinySleepNet(cfg)
-    x = torch.randn(4, 1, cfg.input_size)
+    x = torch.randn(4, cfg.n_input_channels, cfg.input_size)
     out = model(x)
-    print("CNN-only | input:", x.shape, "-> logits:", out.shape)
+    print("CNN-only (EEG solo) | input:", x.shape, "-> logits:", out.shape)
 
     cfg_rnn = TinySleepNetConfig(use_rnn=True, seq_length=10)
     model_rnn = TinySleepNet(cfg_rnn)
-    x_seq = torch.randn(2, cfg_rnn.seq_length, 1, cfg_rnn.input_size)
+    x_seq = torch.randn(2, cfg_rnn.seq_length, cfg_rnn.n_input_channels, cfg_rnn.input_size)
     out_seq, hidden = model_rnn(x_seq)
-    print("CNN+LSTM | input:", x_seq.shape, "-> logits:", out_seq.shape)
+    print("CNN+LSTM (EEG solo) | input:", x_seq.shape, "-> logits:", out_seq.shape)
     print("cnn_out_dim:", model_rnn.cnn_out_dim)
+
+    # Entrega 3 -- verificacion de forma para EEG+EOG (2 canales apilados
+    # desde la primera capa), sin necesitar los .npz reales todavia.
+    cfg_multicanal = TinySleepNetConfig(use_rnn=True, seq_length=10, n_input_channels=2)
+    model_multicanal = TinySleepNet(cfg_multicanal)
+    x_seq_mc = torch.randn(2, cfg_multicanal.seq_length, cfg_multicanal.n_input_channels, cfg_multicanal.input_size)
+    out_seq_mc, hidden_mc = model_multicanal(x_seq_mc)
+    print("CNN+LSTM (EEG+EOG) | input:", x_seq_mc.shape, "-> logits:", out_seq_mc.shape)
+    print("cnn_out_dim (EEG+EOG):", model_multicanal.cnn_out_dim)

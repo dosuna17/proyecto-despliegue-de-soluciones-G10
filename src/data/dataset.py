@@ -36,6 +36,10 @@ import torch
 from sklearn.model_selection import GroupKFold
 from torch.utils.data import Dataset, DataLoader
 
+import sys
+sys.path.append(str(Path(__file__).resolve().parent))  # mismo patron que generar_npz.py
+from segmentation import CLASS_TO_INT  # noqa: E402 -- Entrega 3: conversion explicita string->int
+
 NPZ_DIR = Path("data/interim/epochs_por_sujeto_recortado")  # antes: epochs_por_sujeto
 SPLIT_XLSX_PATH = Path("data/raw/SC-subjects-split.xlsx")
 
@@ -128,6 +132,18 @@ def load_npz_recordings(
             continue
 
         X, y = data["X"], data["y"]
+
+        # Entrega 3 -- riesgo confirmado por el equipo: segmentation.py genera
+        # las etiquetas como texto ("W", "N1", ...), pero compute_class_weights
+        # (np.bincount) y SleepSequenceDataset (torch.from_numpy(...).long())
+        # solo funcionan con enteros. El entrenamiento anterior funciono,
+        # probablemente por la version especifica de datos usada -- no hay
+        # que confiar en que siga funcionando asi por casualidad.
+        if y.dtype.kind in ("U", "S", "O"):  # texto (unicode/bytes/object)
+            y = np.array([CLASS_TO_INT[str(label)] for label in y], dtype=np.int64)
+        else:
+            y = y.astype(np.int64)
+
         if max_epochs_per_recording is not None and X.shape[0] > max_epochs_per_recording:
             max_start = X.shape[0] - max_epochs_per_recording
             start = int(rng.integers(0, max_start + 1))
