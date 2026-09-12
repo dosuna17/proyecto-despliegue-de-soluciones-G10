@@ -22,6 +22,8 @@ data/interim/*
 
 # Ambiente virtual de Python (local, nunca se sube)
 venv/
+.venv
+.venv.*
 
 # Herramientas usadas solo para depuración/revisión, no forman parte del proyecto
 dump_repo.py
@@ -42,3 +44,5 @@ src/data/aplicar_recorte_vigilia.py
 confusion_matrix_avanzado.png
 *.db
 generar_matriz_confusion.py
+
+.DS_Store
