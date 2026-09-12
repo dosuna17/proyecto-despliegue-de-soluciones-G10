@@ -47,6 +47,67 @@ Los datos se gestionan con DVC. Los artefactos locales de MLflow, datos crudos,
 credenciales y pesos de modelos se excluyen de Git; los modelos candidatos y de
 producción se deben versionar en MLflow Model Registry.
 
+## Arquitectura de datos y experimentación
+
+```text
+                    GitHub
+                      │
+                 código y metadatos
+                      │
+                      ▼
+             Proyecto G5 (repo)
+              │             │
+        archivos .dvc     código de entrenamiento
+              │             │
+              ▼             ▼
+             DVC          MLflow Tracking
+              │             │
+              ▼             ├── Backend store: SQLite (EC2)
+ S3 / dvc-proyecto/files/  │
+                            ▼
+                  S3 / dvc-proyecto/mlflow-artifacts/
+```
+
+- **GitHub** conserva el código y los metadatos de DVC, pero no datos crudos,
+  pesos de modelos ni credenciales.
+- **DVC** versiona los conjuntos de datos almacenados en
+  `s3://dvc-proyecto/files/`.
+- **MLflow** registra los experimentos en un backend SQLite alojado en EC2 y
+  almacena artefactos, métricas y modelos en
+  `s3://dvc-proyecto/mlflow-artifacts/`.
+
+## Despliegue de la API
+
+```text
+Dashboard
+   │
+   │ HTTP :8000
+   ▼
+┌──────────────────────┐
+│   Docker + FastAPI   │
+│                      │
+│ GET /health          │
+│ POST /predict        │  ← pendiente
+└──────────┬───────────┘
+           │
+           │ MLFLOW_TRACKING_URI
+           ▼
+┌──────────────────────┐
+│   MLflow :5000       │
+│      EC2             │
+└──────────────────────┘
+```
+
+El contenedor expone FastAPI en el puerto `8000`. El endpoint `GET /health`
+permite comprobar la disponibilidad del servicio; `POST /predict` se añadirá
+para cargar el modelo registrado desde MLflow y realizar inferencias.
+### Endpoint de inferencia
+
+`POST /predict` recibe 15 epocas consecutivas del canal `EEG Fpz-Cz`.
+Cada epoca debe contener 3.000 muestras (30 segundos a 100 Hz) en microvoltios
+(`uV`). La respuesta incluye una prediccion, confianza y probabilidades para
+cada epoca. Coloque `tinysleepnet_final.pth` en `models/` o configure
+`MODEL_PATH` con la ruta al checkpoint antes de iniciar la API.
 ## MLflow Tracking Server
 
 El proyecto utiliza un servidor MLflow desplegado en AWS EC2.
