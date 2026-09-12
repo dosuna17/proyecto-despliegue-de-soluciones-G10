@@ -84,7 +84,7 @@ def main() -> None:
     print(f"Test shape: {X_test.shape}")
     print(f"Classes: {CLASS_NAMES}")
 
-    with mlflow.start_run(experiment_id=experiment.experiment_id, run_name="xgboost_baseline"):
+    with mlflow.mlflow.start_run(experiment_id=experiment.experiment_id, run_name="xgboost_baseline"):
         mlflow.set_tag("model_type", "baseline")
         mlflow.set_tag("signals_used", "EEG Fpz-Cz")
         mlflow.set_tag("stage", "final_model")
