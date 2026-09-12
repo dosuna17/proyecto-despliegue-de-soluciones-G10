@@ -101,7 +101,13 @@ Dashboard
 El contenedor expone FastAPI en el puerto `8000`. El endpoint `GET /health`
 permite comprobar la disponibilidad del servicio; `POST /predict` se añadirá
 para cargar el modelo registrado desde MLflow y realizar inferencias.
+### Endpoint de inferencia
 
+`POST /predict` recibe 15 epocas consecutivas del canal `EEG Fpz-Cz`.
+Cada epoca debe contener 3.000 muestras (30 segundos a 100 Hz) en microvoltios
+(`uV`). La respuesta incluye una prediccion, confianza y probabilidades para
+cada epoca. Coloque `tinysleepnet_final.pth` en `models/` o configure
+`MODEL_PATH` con la ruta al checkpoint antes de iniciar la API.
 ## MLflow Tracking Server
 
 El proyecto utiliza un servidor MLflow desplegado en AWS EC2.
