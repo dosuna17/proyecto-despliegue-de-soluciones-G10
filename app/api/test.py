@@ -1,3 +1,5 @@
+
+#descarga de artefactos
 import os
 import mlflow
 
@@ -29,3 +31,41 @@ path = mlflow.artifacts.download_artifacts(
 
 print("Artifact descargado:")
 print(path)
+
+import torch
+
+path = r"C:\Users\danos\Documents\tinysleepnet_final.pth"
+
+checkpoint = torch.load(
+    r"C:\Users\danos\AppData\Local\Temp\tmpb7m16i3_\tinysleepnet_final.pth.zip",
+    map_location="cpu"
+)
+print(type(checkpoint))
+print(checkpoint.keys() if isinstance(checkpoint, dict) else checkpoint)
+state_dict = torch.load(
+    r"C:\Users\danos\AppData\Local\Temp\tmpb7m16i3_\tinysleepnet_final.pth.zip",
+    map_location="cpu"
+)
+
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
+from src.models.cnn import TinySleepNet, TinySleepNetConfig
+import torch
+
+config = TinySleepNetConfig()
+
+model = TinySleepNet(config)
+model.load_state_dict(checkpoint)
+model.eval()
+print("Modelo cargado correctamente")
+print("CNN output dim:", model.cnn_out_dim)
+x = torch.randn(1, 15, 1, 3000)
+
+result, hidden = model.predict_proba(x)
+
+print("Clase:", result["pred_class"])
+print("Confianza:", result["confidence"])
+print("Probabilidades:", result["probabilities"])
