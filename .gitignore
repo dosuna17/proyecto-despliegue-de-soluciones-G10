@@ -13,3 +13,32 @@ __pycache__/
 # Raw source data must never be committed
 data/raw/*
 !data/raw/.gitkeep
+!data/raw/*.dvc
+mlflow.db
+
+# Archivos .npz generados localmente (derivados, no se versionan en git)
+data/interim/*
+!data/interim/.gitkeep
+
+# Ambiente virtual de Python (local, nunca se sube)
+venv/
+
+# Herramientas usadas solo para depuración/revisión, no forman parte del proyecto
+dump_repo.py
+repo_dump.txt
+
+# Pesos de modelos entrenados (nunca van a git, se manejan manual/MLflow)
+*.pth
+test_metrics_final.json
+# Utilidades locales, pendientes de decidir si se comparten con el equipo
+sync_to_mlflow.py
+src/data/aplicar_recorte_vigilia.py
+confusion_matrix_avanzado.png
+*.db
+
+# Utilidades locales, pendientes de decidir si se comparten con el equipo
+sync_to_mlflow.py
+src/data/aplicar_recorte_vigilia.py
+confusion_matrix_avanzado.png
+*.db
+generar_matriz_confusion.py
