@@ -32,13 +32,11 @@ repo_dump.txt
 test_metrics_final.json
 # Utilidades locales, pendientes de decidir si se comparten con el equipo
 sync_to_mlflow.py
-src/data/aplicar_recorte_vigilia.py
 confusion_matrix_avanzado.png
 *.db
 
 # Utilidades locales, pendientes de decidir si se comparten con el equipo
 sync_to_mlflow.py
-src/data/aplicar_recorte_vigilia.py
 confusion_matrix_avanzado.png
 *.db
 generar_matriz_confusion.py
