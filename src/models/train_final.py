@@ -75,6 +75,10 @@ VAL_FRACTION = 0.15  # % de los sujetos de train reservado para early stopping
 # ahí para reaccionar. El TEST se carga completo, sin recortar.
 MAX_EPOCHS_PER_RECORDING = 500
 
+# Entrega 3 -- etiqueta legible para el tag signals_used de MLflow segun
+# el numero de canales real de los .npz (no asumir siempre EEG-solo).
+SIGNALS_USED_BY_N_CHANNELS = {1: "EEG Fpz-Cz", 2: "EEG+EOG", 3: "EEG+EOG+EMG"}
+
 # Tracking local (modo offline): usado automáticamente si no hay
 # MLFLOW_TRACKING_URI configurada. Nombre distinto al de train.py para
 # poder correr ambos scripts sin que se pisen los archivos .db.
@@ -152,7 +156,16 @@ def main():
     test_loader = build_dataloader(test_recs, seq_length=DEFAULT_SEQ_LENGTH,
                                     batch_size=DEFAULT_BATCH_SIZE, shuffle=False)
 
-    config = TinySleepNetConfig(use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights)
+    # Entrega 3 -- numero de canales tomado de los datos reales (1=EEG, 2=EEG+EOG, ...),
+    # NO asumido fijo, para que este mismo script sirva para cualquier variante multicanal.
+    n_input_channels = fit_recs[0].X.shape[1]
+    assert all(rec.X.shape[1] == n_input_channels for rec in fit_recs + val_recs + test_recs), (
+        "Grabaciones con distinto numero de canales entre fit/val/test -- revisar channel_picks"
+    )
+    config = TinySleepNetConfig(
+        use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights,
+        n_input_channels=n_input_channels,
+    )
     model = TinySleepNet(config).to(DEVICE)
     criterion = build_class_weighted_loss(class_weights, device=DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=ADAM_BETAS)
@@ -169,8 +182,9 @@ def main():
     # forma manual para poder envolver también ESE paso final.
     mlflow.start_run(run_name="tinysleepnet_final")
     try:
+        signals_used_tag = SIGNALS_USED_BY_N_CHANNELS.get(n_input_channels, f"{n_input_channels}_canales")
         mlflow.set_tag("model_type", "advanced")
-        mlflow.set_tag("signals_used", "EEG Fpz-Cz")
+        mlflow.set_tag("signals_used", signals_used_tag)
         mlflow.set_tag("stage", "final_model")
         mlflow.log_params(
             {
