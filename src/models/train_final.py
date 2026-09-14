@@ -183,6 +183,10 @@ def main():
     mlflow.start_run(run_name="tinysleepnet_final")
     try:
         signals_used_tag = SIGNALS_USED_BY_N_CHANNELS.get(n_input_channels, f"{n_input_channels}_canales")
+        # Entrega 3 -- slug seguro para nombres de archivo (sin espacios ni "+"),
+        # usado en checkpoint/modelo/metricas para que cada combinacion de
+        # canales guarde en su propio archivo y nunca sobreescriba a otra.
+        signals_used_slug = signals_used_tag.replace(" ", "_").replace("+", "-")
         mlflow.set_tag("model_type", "advanced")
         mlflow.set_tag("signals_used", signals_used_tag)
         mlflow.set_tag("stage", "final_model")
@@ -255,8 +259,8 @@ def main():
             # (no solo el guardado final, que solo ocurre si TODO el
             # script termina sin errores).
             if epoch % CHECKPOINT_EVERY_N_EPOCHS == 0:
-                torch.save(best_state, "checkpoint_intermedio.pth")
-                print(f"  [checkpoint] guardado en checkpoint_intermedio.pth (mejor hasta ahora: "
+                torch.save(best_state, f"checkpoint_intermedio_{signals_used_slug}.pth")
+                print(f"  [checkpoint] guardado en checkpoint_intermedio_{signals_used_slug}.pth (mejor hasta ahora: "
                       f"val_macroF1={best_val_macro_f1:.4f})")
 
         model.load_state_dict(best_state)
@@ -275,16 +279,16 @@ def main():
         # (log_metrics, log_artifact, log_model -- cualquier hipo de red
         # en una corrida larga sin supervisión), el modelo y las métricas
         # ya están a salvo en disco.
-        cm_path = "confusion_matrix_test.png"
+        cm_path = f"confusion_matrix_test_{signals_used_slug}.png"
         save_confusion_matrix_plot(test_metrics["confusion_matrix"], CLASS_NAMES, cm_path)
         print(f"Matriz de confusión guardada localmente en: {cm_path}")
 
-        model_path = "tinysleepnet_final.pth"
+        model_path = f"tinysleepnet_final_{signals_used_slug}.pth"
         torch.save(model.state_dict(), model_path)
         print(f"Modelo guardado localmente en: {model_path}")
 
         import json
-        metrics_path = "test_metrics_final.json"
+        metrics_path = f"test_metrics_final_{signals_used_slug}.json"
         with open(metrics_path, "w") as f:
             json.dump(test_metrics, f, indent=2)
         print(f"Métricas de test guardadas localmente en: {metrics_path}")
