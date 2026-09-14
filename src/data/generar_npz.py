@@ -33,8 +33,11 @@ from segmentation import extract_epochs, class_distribution   # noqa: E402
 # CONFIGURACIÓN -- ajusta rutas si hace falta
 # ---------------------------------------------------------------------
 DATA_DIR = Path("data/sleep-edfx/sleep-cassette")
-OUT_DIR = Path("data/interim/epochs_por_sujeto")
-CHANNEL_PICKS = ["EEG Fpz-Cz"]  # confirmado: canal único usado por el equipo
+# Entrega 3 -- Ruta B (TinySleepNet EEG+EOG): carpeta y canales distintos a la
+# corrida EEG-solo original, para no chocar con esos .npz ya generados (el
+# script es "reanudable" y saltaria todo si el OUT_DIR ya tiene archivos).
+OUT_DIR = Path("data/interim/epochs_por_sujeto_eeg_eog")
+CHANNEL_PICKS = ["EEG Fpz-Cz", "EOG horizontal"]
 
 
 def save_epoch_dataset(dataset, out_path: Path) -> None:
