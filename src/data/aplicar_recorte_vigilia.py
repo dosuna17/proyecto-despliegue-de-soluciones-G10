@@ -8,11 +8,16 @@ use_trim_wake_edges=True). Para que el modelo avanzado sea comparable,
 se aplica la MISMA transformación sobre los .npz ya existentes.
 
 Uso:
-    python src\\data\\aplicar_recorte_vigilia.py
+    python src\\data\\aplicar_recorte_vigilia.py [src_dir]
 
-Genera una copia nueva en data/interim/epochs_por_sujeto_recortado/,
-dejando intactos los .npz originales (sin recorte) por si se necesitan
-después para comparar con/sin recorte.
+    Si no se pasa src_dir, usa data/interim/epochs_por_sujeto (EEG-solo).
+    dst_dir se deriva automaticamente como "<src_dir>_recortado" -- nunca
+    hace falta pasarlo a mano, y por eso nunca puede quedar desincronizado
+    de la variante de canales que se esta procesando.
+
+Genera una copia nueva en "<src_dir>_recortado/", dejando intactos los
+.npz originales (sin recorte) por si se necesitan después para comparar
+con/sin recorte.
 """
 from __future__ import annotations
 
@@ -55,9 +60,15 @@ def trim_wake_edges_arrays(X: np.ndarray, y: np.ndarray, buffer_epochs: int = 60
 
 def main(
     src_dir: str = "data/interim/epochs_por_sujeto",
-    dst_dir: str = "data/interim/epochs_por_sujeto_recortado",
+    dst_dir: str = None,
     buffer_epochs: int = 60,
 ):
+    if dst_dir is None:
+        # Entrega 3 -- si no se especifica dst_dir, se deriva de src_dir
+        # (ej. ".../epochs_por_sujeto_eeg_eog" ->
+        # ".../epochs_por_sujeto_eeg_eog_recortado"), para que nunca quede
+        # desincronizado de la variante de canales que se esta procesando.
+        dst_dir = f"{src_dir}_recortado"
     src_path = Path(src_dir)
     dst_path = Path(dst_dir)
     dst_path.mkdir(parents=True, exist_ok=True)
@@ -116,4 +127,6 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    _src_dir_arg = sys.argv[1] if len(sys.argv) > 1 else "data/interim/epochs_por_sujeto"
+    main(src_dir=_src_dir_arg)
