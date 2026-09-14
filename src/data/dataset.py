@@ -26,6 +26,7 @@ para que el swap a splits.py oficial sea trivial cuando exista.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
@@ -40,7 +41,11 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent))  # mismo patron que generar_npz.py
 from segmentation import CLASS_TO_INT  # noqa: E402 -- Entrega 3: conversion explicita string->int
 
-NPZ_DIR = Path("data/interim/epochs_por_sujeto_recortado")  # antes: epochs_por_sujeto
+# Entrega 3 -- override por variable de entorno para poder apuntar a distintas
+# carpetas de .npz (EEG-solo vs EEG+EOG) sin editar este archivo cada vez que
+# se cambia de variante. Si SLEEP_NPZ_DIR no esta configurada, se mantiene el
+# comportamiento original (EEG-solo, ya probado).
+NPZ_DIR = Path(os.environ.get("SLEEP_NPZ_DIR", "data/interim/epochs_por_sujeto_recortado"))
 SPLIT_XLSX_PATH = Path("data/raw/SC-subjects-split.xlsx")
 
 N_FOLDS_DEFAULT = 5           # decisión propia (cross-validation, como Santiago)
