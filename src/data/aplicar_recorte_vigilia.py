@@ -28,6 +28,7 @@ sys.path.append(str(Path(__file__).resolve().parent))
 # esta rama -- opera directamente sobre los arrays X/y de un .npz.
 CLASS_TO_INT = {"W": 0, "N1": 1, "N2": 2, "N3": 3, "REM": 4}
 WAKE_INT = CLASS_TO_INT["W"]
+WAKE_LABEL = "W"
 
 
 def trim_wake_edges_arrays(X: np.ndarray, y: np.ndarray, buffer_epochs: int = 60):
@@ -35,7 +36,11 @@ def trim_wake_edges_arrays(X: np.ndarray, y: np.ndarray, buffer_epochs: int = 60
     Misma lógica que trim_wake_edges() de segmentation.py, operando
     directamente sobre arrays X/y en vez de un objeto EpochDataset.
     """
-    non_wake_idx = np.where(y != WAKE_INT)[0]
+    if y.dtype.kind in ("U", "S", "O"):
+        is_wake = (y == WAKE_LABEL)
+    else:
+        is_wake = (y == WAKE_INT)
+    non_wake_idx = np.where(~is_wake)[0]
 
     if len(non_wake_idx) == 0:
         raise ValueError("La grabación no tiene ninguna época de sueño real (todo es W)")
