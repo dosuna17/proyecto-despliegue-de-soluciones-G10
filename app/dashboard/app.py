@@ -179,11 +179,11 @@ def render_screen_select():
 #-------------------------------------------------------------------------------------------------------------------
 # Pantalla 2: Análisis del estudio seleccionado
 #-------------------------------------------------------------------------------------------------------------------
-def render_kpis(total_epocas, duracion_horas, porcentaje_rem, n_baja_confianza):
+def render_kpis(total_epocas, duracion_horas, eficiencia_sueno, n_baja_confianza):
     kpis = [
         ("Duración total", f"{int(duracion_horas)}h {int((duracion_horas % 1) * 60):02d}m", False),
         ("Épocas totales", f"{total_epocas}", False),
-        ("Sueño REM", f"{porcentaje_rem}%", False),
+        ("Eficiencia de sueño", f"{eficiencia_sueno}%", False),
         ("Baja confianza", f"{n_baja_confianza} épocas", True),
     ]
     cols = st.columns(4)
@@ -194,6 +194,30 @@ def render_kpis(total_epocas, duracion_horas, porcentaje_rem, n_baja_confianza):
                 f"""<div class="{clase}">
                     <div class="kpi-label">{label}</div>
                     <div class="kpi-value">{value}</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+
+# Muestra la distribución de estadios en porcentajes, con un diseño de tarjetas para cada estadio:
+def render_distribucion_estadios(etapas):
+    orden_estadios = ["W", "N1", "N2", "N3", "REM"]
+    total = len(etapas)
+    porcentajes = {
+        estadio: round(100 * etapas.count(estadio) / total)
+        for estadio in orden_estadios
+    }
+
+    st.markdown(
+        '<div class="kpi-label" style="margin-bottom: 8px;">Distribución de estadios</div>',
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(5)
+    for col, estadio in zip(cols, orden_estadios):
+        with col:
+            st.markdown(
+                f"""<div class="kpi-card">
+                    <div class="kpi-label">{estadio}</div>
+                    <div class="kpi-value">{porcentajes[estadio]}%</div>
                 </div>""",
                 unsafe_allow_html=True,
             )
@@ -221,10 +245,17 @@ def render_screen_analysis():
 
     total_epocas = len(etapas)
     duracion_horas = (total_epocas * 30) / 3600
-    porcentaje_rem = round(100 * etapas.count("REM") / total_epocas)
+    # Eficiencia de sueño = proporción de épocas dormidas (todo lo que no es W) sobre el
+    # total del registro. Asume que el registro ya está recortado al periodo de sueño
+    # (ver recorte de vigilia del pipeline); con un registro sin recortar subestimaría
+    # la eficiencia real.
+    epocas_dormido = total_epocas - etapas.count("W")
+    eficiencia_sueno = round(100 * epocas_dormido / total_epocas)
     epocas_baja_confianza = [i for i, c in enumerate(confianza) if c < LOW_CONFIDENCE_THRESHOLD]
 
-    render_kpis(total_epocas, duracion_horas, porcentaje_rem, len(epocas_baja_confianza))
+    render_kpis(total_epocas, duracion_horas, eficiencia_sueno, len(epocas_baja_confianza))
+    render_distribucion_estadios(etapas)
+    st.write("")
 
     #-------------------------------------------------------------------------------------------------------------------
     # Hipnograma: Interactivo con Plotly para mostrar las etapas del sueño a lo largo del tiempo
@@ -282,6 +313,7 @@ def render_screen_analysis():
     ) 
 
     # Mostramos las probabilidades de cada clase en tarjetas separadas, resaltando la clase con la mayor probabilidad:
+    st.caption("Probabilidad que el modelo asigna a cada estadio para esta época — suman 100%")
     prob_cols = st.columns(5)
     for col, clase in zip(prob_cols, probabilidades):
         valor = probabilidades[clase]
