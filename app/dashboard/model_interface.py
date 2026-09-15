@@ -10,6 +10,15 @@
 # en el commit 2 por la llamada real a /predict o /predict-xgboost.
 
 import os
+import sys
+from pathlib import Path
+
+# app/dashboard/model_interface.py -> parents[2] = raíz del repo.
+# Mismo patrón que ya usa train_best_xgboost_mlflow.py para poder
+# importar src.* sin depender de desde dónde se lance el script.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.loader import find_subject_pairs, load_subject
 from src.data.segmentation import extract_epochs,trim_wake_edges, CLASS_NAMES
