@@ -1,8 +1,10 @@
+from types import SimpleNamespace
+
 import numpy as np
 import torch
 from fastapi.testclient import TestClient
 
-from app.api.main import app, load_model
+from app.api.main import app, find_run_id_for_artifact, load_model
 from src.models.cnn import TinySleepNet, TinySleepNetConfig
 
 
@@ -38,6 +40,41 @@ def test_predict_rejects_an_invalid_epoch_count() -> None:
     response = TestClient(app).post("/predict", json=payload)
 
     assert response.status_code == 422
+
+
+def test_predict_rejects_an_invalid_model_artifact_path() -> None:
+    payload = _payload()
+    payload["model_artifact"] = "../other-model.pth"
+
+    response = TestClient(app).post("/predict", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_find_run_id_for_artifact_returns_latest_matching_run() -> None:
+    matching_artifact = SimpleNamespace(
+        is_dir=False,
+        path="tinysleepnet_final.pth",
+    )
+    client = SimpleNamespace(
+        search_experiments=lambda view_type: [
+            SimpleNamespace(
+                experiment_id="1",
+                name="sleep-staging-advanced",
+            )
+        ],
+        search_runs=lambda **kwargs: [
+            SimpleNamespace(info=SimpleNamespace(run_id="newest-run", start_time=2)),
+            SimpleNamespace(info=SimpleNamespace(run_id="older-run", start_time=1)),
+        ],
+        list_artifacts=lambda run_id, path: (
+            [matching_artifact] if run_id == "newest-run" else []
+        ),
+    )
+
+    result = find_run_id_for_artifact(client, "tinysleepnet_final.pth")
+
+    assert result == "newest-run"
 
 
 def test_predict_reports_a_missing_model(monkeypatch) -> None:
