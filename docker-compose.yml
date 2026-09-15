@@ -1,0 +1,26 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sleep-staging-api
+    ports:
+      - "8000:8000"
+    environment:
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://32.194.151.154:5000}
+      MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-tinysleepnet_final.pth}
+      XGBOOST_ARTIFACT_PATH: ${XGBOOST_ARTIFACT_PATH:-best-xgboost-multicanal.joblib}
+      MODEL_PATH: ${MODEL_PATH:-}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
