@@ -211,7 +211,7 @@ def train_one_fold(
     )
     config = TinySleepNetConfig(
         use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights,
-        in_channels=n_input_channels,
+        input_channels=n_input_channels,
     )
     model = TinySleepNet(config).to(DEVICE)
     criterion = build_class_weighted_loss(class_weights, device=DEVICE)
