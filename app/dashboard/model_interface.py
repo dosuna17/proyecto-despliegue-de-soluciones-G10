@@ -11,6 +11,7 @@
 
 import os
 import sys
+import requests
 from pathlib import Path
 
 # app/dashboard/model_interface.py -> parents[2] = raíz del repo.
@@ -21,9 +22,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.loader import find_subject_pairs, load_subject
-from src.data.segmentation import extract_epochs,trim_wake_edges, CLASS_NAMES
+from src.data.segmentation import extract_epochs,trim_wake_edges, CLASS_NAMES,  EpochDataset
 
-DATA_ROOT = r"C:\Users\mjgar\Escritorio\Maestria\Semestre_4\Ciclo_1\Proyecto_Desarrollo_Soluciones\MicroProyecto\Entrega_1\sleep-edf-database-expanded-1.0.0"
+DATA_ROOT = os.getenv("SLEEP_STAGING_DATA_ROOT")
+if DATA_ROOT is None:
+    raise RuntimeError(
+        "Falta configurar la variable de entorno SLEEP_STAGING_DATA_ROOT "
+        "con la ruta local donde tengas descargado el dataset Sleep-EDFx."
+    )
 
 # Placeholder de confianza mientras el commit 2 conecta la API real.
 _CONFIANZA_PROVISIONAL = 0.99
@@ -62,32 +68,107 @@ def cargar_estudio(estudio_id, canales_activos):
     return dataset
 
 # COMMIT 1 de 2: reemplaza la predicción simulada por la predicción real vía API.
+API_BASE_URL = os.getenv("SLEEP_STAGING_API_URL", "http://localhost:8000")
+BATCH_SIZE = 15  # /predict exige exactamente 15 épocas por llamada
+
+# Recorta un EpochDataset a las primeras n_epocas, preservando su forma.
+def _recortar_dataset(dataset, n_epocas):
+    return EpochDataset(
+        recording_id=dataset.recording_id,
+        subject_code=dataset.subject_code,
+        night=dataset.night,
+        X=dataset.X[:n_epocas],
+        y=dataset.y[:n_epocas],
+        recording_ids=dataset.recording_ids[:n_epocas],
+        subject_codes=dataset.subject_codes[:n_epocas],
+        channel_names=dataset.channel_names,
+        sfreq=dataset.sfreq,
+        signal_unit=dataset.signal_unit,
+        dropped_epochs=dataset.dropped_epochs + (len(dataset.y) - n_epocas),
+    )
+
+# Post a la API real, traduciendo errores HTTP al mensaje que la API ya da.
+def _llamar_api(endpoint, payload, timeout):
+    try:
+        respuesta = requests.post(f"{API_BASE_URL}{endpoint}", json=payload, timeout=timeout)
+        respuesta.raise_for_status()
+        return respuesta.json()
+    except requests.exceptions.ConnectionError as error:
+        raise RuntimeError(
+            f"No se pudo conectar a la API en {API_BASE_URL}. "
+            "¿Está corriendo `uvicorn app.api.main:app --reload`?"
+        ) from error
+    except requests.exceptions.HTTPError as error:
+        detalle = respuesta.json().get("detail", {})
+        mensaje = detalle.get("message", str(error)) if isinstance(detalle, dict) else str(error)
+        raise RuntimeError(f"La API respondió con error: {mensaje}") from error
+
+# Llama a /predict en bloques de 15 épocas (TinySleepNet).
+def _predecir_avanzado(dataset):
+    n_epocas = len(dataset.y)
+    n_epocas_usables = (n_epocas // BATCH_SIZE) * BATCH_SIZE
+    if n_epocas_usables == 0:
+        raise ValueError(
+            f"El estudio tiene {n_epocas} épocas, menos que el bloque mínimo "
+            f"de {BATCH_SIZE} que exige /predict."
+        )
+
+    resultados = []
+    for inicio in range(0, n_epocas_usables, BATCH_SIZE):
+        bloque = dataset.X[inicio:inicio + BATCH_SIZE]  # (15, n_canales, 3000)
+        payload = {
+            "channel_names": dataset.channel_names,
+            "sampling_rate_hz": int(dataset.sfreq),
+            "signal_unit": dataset.signal_unit,
+            "epochs": bloque.tolist(),
+        }
+        cuerpo = _llamar_api("/predict", payload, timeout=30)
+        for i, pred in enumerate(cuerpo["predictions"]):
+            resultados.append({
+                "prediccion": pred["predicted_stage"],
+                "confianza": pred["confidence"],
+                "probabilidades": pred["probabilities"],
+                "etiqueta_experta": dataset.y[inicio + i],
+            })
+
+    dataset_usado = _recortar_dataset(dataset, n_epocas_usables)
+    return dataset_usado, resultados
+
+# llama a /predict-xgboost con todas las épocas de una sola vez (sin límite de 15).
+def _predecir_baseline(dataset):
+    payload = {
+        "channel_names": dataset.channel_names,
+        "sampling_rate_hz": int(dataset.sfreq),
+        "signal_unit": dataset.signal_unit,
+        "epochs": dataset.X.tolist(),
+    }
+    cuerpo = _llamar_api("/predict-xgboost", payload, timeout=60)
+    resultados = [
+        {
+            "prediccion": pred["predicted_stage"],
+            "confianza": pred["confidence"],
+            "probabilidades": pred["probabilities"],
+            "etiqueta_experta": dataset.y[indice],
+        }
+        for indice, pred in enumerate(cuerpo["predictions"])
+    ]
+    return dataset, resultados  # XGBoost no recorta -- no tiene límite de bloque
+
+
 def predecir_estudio(dataset, modelo="avanzado"):
     """
-    PROVISIONAL (commit 1): usa la etiqueta experta como si fuera la
-    predicción del modelo, con confianza fija, solo para poder probar
-    el resto del tablero con datos reales mientras se conecta la API
-    de verdad en el commit 2.
+    Llama a la API real para predecir todas las épocas de un estudio.
 
-    El parámetro `modelo` ya está aquí para no tener que cambiar la
-    firma de la función cuando se conecte la API real.
+    Devuelve (dataset_usado, resultados). dataset_usado puede tener menos
+    épocas que el original si modelo="avanzado" y el total no era múltiplo
+    de 15 (la API exige bloques exactos); con modelo="baseline" siempre
+    coincide con el dataset original.
     """
-    n_epocas = len(dataset.y)
-    resto = (1 - _CONFIANZA_PROVISIONAL) / (len(CLASS_NAMES) - 1)
-    resultados = []
-    for indice in range(n_epocas):
-        prediccion = dataset.y[indice]
-        probabilidades = {
-            clase: (_CONFIANZA_PROVISIONAL if clase == prediccion else resto)
-            for clase in CLASS_NAMES
-        }
-        resultados.append({
-            "prediccion": prediccion,
-            "confianza": _CONFIANZA_PROVISIONAL,
-            "probabilidades": probabilidades,
-            "etiqueta_experta": dataset.y[indice],
-        })
-    return resultados
+    if modelo == "avanzado":
+        return _predecir_avanzado(dataset)
+    if modelo == "baseline":
+        return _predecir_baseline(dataset)
+    raise ValueError(f"Modelo no reconocido: {modelo}")
 
 # Lee la predicción ya calculada para una época específica (no llama a la API).
 def obtener_prediccion(resultados, indice):

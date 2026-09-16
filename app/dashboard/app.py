@@ -169,10 +169,15 @@ def render_screen_select():
         # Guardamos el estudio seleccionado en la variable de estado y cambiamos a la pantalla 2 de análisis: 
         if st.button("Analizar estudio", type="primary", use_container_width=True):
                 canales_activos = [nombre for nombre, activo in canales.items() if activo]
-                with st.spinner("Cargando estudio..."):
+                with st.spinner("Cargando estudio y calculando predicciones..."):
                     dataset = model.cargar_estudio(estudio_seleccionado, canales_activos)
+                    try:
+                        dataset, resultados = model.predecir_estudio(dataset, modelo="avanzado")
+                    except RuntimeError as error:
+                        st.error(str(error))
+                        st.stop()
                     st.session_state.dataset = dataset
-                    st.session_state.resultados = model.predecir_estudio(dataset, modelo="avanzado")
+                    st.session_state.resultados = resultados
                 st.session_state.selected_study = estudio_seleccionado
                 st.session_state.selected_channels = canales
                 st.session_state.epoch_index = 0
