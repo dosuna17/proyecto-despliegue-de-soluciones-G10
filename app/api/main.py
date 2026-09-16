@@ -365,6 +365,21 @@ def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionRespo
             else np.asarray(encoded).astype(str)
         )
         class_labels = artifact.get("class_labels", CLASS_NAMES)
+        # ``predict_proba`` sigue el orden de clases del modelo. En XGBoost,
+        # cuando se entrena con un LabelEncoder, este es el orden numérico del
+        # codificador (normalmente alfabético), que puede diferir del orden
+        # canónico de la API almacenado en ``class_labels``.
+        model_classes = np.asarray(
+            getattr(model, "classes_", np.arange(probabilities.shape[1]))
+        )
+        if label_encoder is not None:
+            probability_labels = label_encoder.inverse_transform(
+                model_classes.astype(int)
+            )
+        elif np.issubdtype(model_classes.dtype, np.integer):
+            probability_labels = np.asarray(class_labels)[model_classes]
+        else:
+            probability_labels = np.asarray(class_labels)
     except Exception as error:
         raise HTTPException(
             status_code=503,
@@ -383,7 +398,7 @@ def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionRespo
             confidence=float(np.max(probabilities[index])),
             probabilities={
                 str(class_name): float(probabilities[index, class_index])
-                for class_index, class_name in enumerate(class_labels)
+                for class_index, class_name in enumerate(probability_labels)
             },
         )
         for index in range(len(encoded))

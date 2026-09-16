@@ -101,12 +101,14 @@ def _xgboost_payload(channel_names=("EEG Fpz-Cz", "EOG horizontal"), n_epochs=5)
 # Clase de modelo XGBoost falso para pruebas, que devuelve predicciones y probabilidades constantes.
 class _FakeXGBModel:
 
+    classes_ = np.arange(len(CLASS_NAMES))
+
     def predict(self, X):
         return np.zeros(len(X), dtype=int)
 
     def predict_proba(self, X):
-        n_classes = len(CLASS_NAMES)
-        return np.full((len(X), n_classes), 1 / n_classes)
+        probabilities = np.array([[0.1, 0.2, 0.3, 0.4, 0.0]])
+        return np.repeat(probabilities, len(X), axis=0)
 
 # Función auxiliar para generar un artefacto de modelo XGBoost falso para pruebas, incluyendo un codificador de etiquetas y nombres de clases.
 def _fake_xgboost_artifact() -> dict:
@@ -133,6 +135,13 @@ def test_predict_xgboost_returns_a_prediction_for_each_epoch(monkeypatch) -> Non
     assert len(body["predictions"]) == 5
     assert set(body["predictions"][0]["probabilities"]) == set(CLASS_NAMES)
     assert abs(sum(body["predictions"][0]["probabilities"].values()) - 1) < 1e-5
+    assert body["predictions"][0]["probabilities"] == {
+        "W": 0.0,
+        "N1": 0.1,
+        "N2": 0.2,
+        "N3": 0.3,
+        "REM": 0.4,
+    }
 
 
 def test_predict_xgboost_rejects_mismatched_channel_names() -> None:
