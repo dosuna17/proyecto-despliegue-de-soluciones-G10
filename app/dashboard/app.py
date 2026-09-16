@@ -1,9 +1,6 @@
 import streamlit as st
 import plotly.graph_objects as go
-import math
-import random
 
-import mock_data
 import model_interface as model
 
 # Configuración de la página de Streamlit:
@@ -171,8 +168,14 @@ def render_screen_select():
 
         # Guardamos el estudio seleccionado en la variable de estado y cambiamos a la pantalla 2 de análisis: 
         if st.button("Analizar estudio", type="primary", use_container_width=True):
+                canales_activos = [nombre for nombre, activo in canales.items() if activo]
+                with st.spinner("Cargando estudio..."):
+                    dataset = model.cargar_estudio(estudio_seleccionado, canales_activos)
+                    st.session_state.dataset = dataset
+                    st.session_state.resultados = model.predecir_estudio(dataset, modelo="avanzado")
                 st.session_state.selected_study = estudio_seleccionado
                 st.session_state.selected_channels = canales
+                st.session_state.epoch_index = 0
                 st.session_state.screen = "analysis"
                 st.rerun()
 
@@ -237,11 +240,11 @@ def render_screen_analysis():
             st.rerun()
 
     # Mostramos los indicadores (KPIs) totales de épocas, la duración total del sueño y el porcentaje de sueño REM en la pantalla de análisis:
-    etapas = mock_data.obtener_etapas()
-    # Agregamos una lista de confianza para cada época, que representa la confianza del modelo en la predicción de la etapa del sueño:
-    confianza = mock_data.obtener_confianza()
-    # Agregamos una lista de etiquetas expertas para cada época, que representa la etapa del sueño determinada por un experto humano:
-    etiquetas_expertas = mock_data.obtener_etiquetas_expertas()
+    etapas = [r["prediccion"] for r in st.session_state.resultados]
+    # Confianza del modelo para cada época (provisional hasta conectar la API real):
+    confianza = [r["confianza"] for r in st.session_state.resultados]
+    # Etiqueta experta real, ya extraída del hipnograma original por segmentation.py:
+    etiquetas_expertas = [r["etiqueta_experta"] for r in st.session_state.resultados]
 
     total_epocas = len(etapas)
     duracion_horas = (total_epocas * 30) / 3600
@@ -254,6 +257,7 @@ def render_screen_analysis():
     epocas_baja_confianza = [i for i, c in enumerate(confianza) if c < LOW_CONFIDENCE_THRESHOLD]
 
     render_kpis(total_epocas, duracion_horas, eficiencia_sueno, len(epocas_baja_confianza))
+    st.write("")
     render_distribucion_estadios(etapas)
     st.write("")
 
@@ -300,7 +304,7 @@ def render_screen_analysis():
     )
 
     # Mostramos la etapa del sueño predicha y la confianza del modelo para la época seleccionada:
-    resultado = model.obtener_prediccion(st.session_state.epoch_index)
+    resultado = model.obtener_prediccion(st.session_state.resultados, st.session_state.epoch_index)
     prediccion = resultado["prediccion"]
     conf = resultado["confianza"]
     probabilidades = resultado["probabilidades"]
@@ -355,27 +359,18 @@ def render_screen_analysis():
     #-------------------------------------------------------------------------------------------------------------------
     st.subheader("Señales fisiológicas")
 
-    # Definimos una función para generar señales simuladas para cada canal activo, utilizando una semilla aleatoria basada en el índice de la época y el nombre del canal para garantizar que la misma época genere la misma señal:
-    def generar_senal(nombre_canal, indice_epoca):
-        random.seed(indice_epoca + hash(nombre_canal) % 1000)  # misma época = misma señal
-        tiempo = [i * 0.1 for i in range(300)]
+    # Señal real de la época seleccionada, ya cargada en session_state (ver Cambio 2):
+    epoca_actual = st.session_state.dataset.X[st.session_state.epoch_index]  # (n_canales, 3000)
+    sfreq = st.session_state.dataset.sfreq
+    tiempo = [i / sfreq for i in range(epoca_actual.shape[1])]
 
-        if "Pz-Oz" in nombre_canal:
-            senal = [math.sin(t * 2) * 0.5 + random.uniform(-0.1, 0.1) for t in tiempo]
-            color = "#E50FEC"
-        elif "EEG" in nombre_canal:
-            senal = [math.sin(t * 2) * 0.5 + random.uniform(-0.05, 0.05) for t in tiempo]
-            color = "#16A34A"     
-        elif "EOG" in nombre_canal:
-            senal = [math.sin(t * 0.3) * 0.8 + random.uniform(-0.05, 0.05) for t in tiempo]
-            color = "#7C3AED" 
-        else:  # EMG
-            senal = [random.uniform(-0.3, 0.3) for t in tiempo]
-            color = "#F97316" 
-
-        return tiempo, senal, color
-
-    canales_activos_lista = [c for c, activo in st.session_state.selected_channels.items() if activo]
+    colores = {
+        "EEG Fpz-Cz": "#16A34A",
+        "EEG Pz-Oz": "#E50FEC",
+        "EOG horizontal": "#7C3AED",
+        "EMG submentoniano": "#F97316",
+    }
+    canales_activos_lista = st.session_state.dataset.channel_names
 
     # Las mostramos de a 2 por fila, para que no queden ni muy angostas ni
     # una debajo de otra ocupando toda la pantalla
@@ -383,11 +378,13 @@ def render_screen_analysis():
         fila = canales_activos_lista[i:i + 2]
         cols = st.columns(len(fila))
         for col, nombre_canal in zip(cols, fila):
-            tiempo, senal, color = generar_senal(nombre_canal, st.session_state.epoch_index)
+            indice_canal = canales_activos_lista.index(nombre_canal)
+            senal = epoca_actual[indice_canal]
+            color = colores.get(nombre_canal, "#334155")
             fig_senal = go.Figure(go.Scatter(x=tiempo, y=senal, mode="lines", line=dict(width=1.2, color=color)))
             fig_senal.update_layout(
-                title=nombre_canal, xaxis_title="Tiempo (s)", height=200,
-                margin=dict(t=30, b=10), plot_bgcolor="white",
+                title=nombre_canal, xaxis_title="Tiempo (s)", yaxis_title="Amplitud (µV)",
+                height=200, margin=dict(t=30, b=10), plot_bgcolor="white",
             )
             with col:
                 st.plotly_chart(fig_senal, use_container_width=True)
