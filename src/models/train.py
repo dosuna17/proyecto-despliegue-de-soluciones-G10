@@ -211,7 +211,7 @@ def train_one_fold(
     )
     config = TinySleepNetConfig(
         use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights,
-        n_input_channels=n_input_channels,
+        in_channels=n_input_channels,
     )
     model = TinySleepNet(config).to(DEVICE)
     criterion = build_class_weighted_loss(class_weights, device=DEVICE)
@@ -287,7 +287,7 @@ def main():
     signals_used_tag = SIGNALS_USED_BY_N_CHANNELS.get(n_input_channels, f"{n_input_channels}_canales")
     del _probe_rec
 
-    mlflow.start_run(run_name="tinysleepnet_cv")
+    mlflow.start_run(run_name=f"tinysleepnet_cv_{signals_used_tag}")
     try:
         mlflow.set_tag("model_type", "advanced")
         mlflow.set_tag("signals_used", signals_used_tag)

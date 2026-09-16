@@ -164,7 +164,7 @@ def main():
     )
     config = TinySleepNetConfig(
         use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights,
-        n_input_channels=n_input_channels,
+        in_channels=n_input_channels,
     )
     model = TinySleepNet(config).to(DEVICE)
     criterion = build_class_weighted_loss(class_weights, device=DEVICE)
@@ -180,13 +180,17 @@ def main():
     # script se cae con un traceback -- aunque todo el trabajo real ya
     # esté guardado localmente para ese punto. Se maneja el run de
     # forma manual para poder envolver también ESE paso final.
-    mlflow.start_run(run_name="tinysleepnet_final")
+    # Entrega 3 -- se calcula ANTES de start_run() para poder usarlo en el
+    # nombre del run (ej. "tinysleepnet_final_EEG+EOG") y asi identificar
+    # cada variante de canales directamente en la lista de runs de MLflow,
+    # sin tener que renombrar a mano despues.
+    signals_used_tag = SIGNALS_USED_BY_N_CHANNELS.get(n_input_channels, f"{n_input_channels}_canales")
+    # Entrega 3 -- slug seguro para nombres de archivo (sin espacios ni "+"),
+    # usado en checkpoint/modelo/metricas para que cada combinacion de
+    # canales guarde en su propio archivo y nunca sobreescriba a otra.
+    signals_used_slug = signals_used_tag.replace(" ", "_").replace("+", "-")
+    mlflow.start_run(run_name=f"tinysleepnet_final_{signals_used_tag}")
     try:
-        signals_used_tag = SIGNALS_USED_BY_N_CHANNELS.get(n_input_channels, f"{n_input_channels}_canales")
-        # Entrega 3 -- slug seguro para nombres de archivo (sin espacios ni "+"),
-        # usado en checkpoint/modelo/metricas para que cada combinacion de
-        # canales guarde en su propio archivo y nunca sobreescriba a otra.
-        signals_used_slug = signals_used_tag.replace(" ", "_").replace("+", "-")
         mlflow.set_tag("model_type", "advanced")
         mlflow.set_tag("signals_used", signals_used_tag)
         mlflow.set_tag("stage", "final_model")
