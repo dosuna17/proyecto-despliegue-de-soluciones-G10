@@ -162,7 +162,7 @@ st.markdown("""
 LOW_CONFIDENCE_THRESHOLD = 0.65
 
 # Estudios de ejemplo disponibles en la Pantalla 1 (metadata solo informativa,
-# no afecta la carga real -- eso lo hace model.cargar_estudio):
+# no afecta la carga real, eso lo hace model.cargar_estudio):
 ESTUDIOS_DISPONIBLES = ["SC4001E0", "SC4012E0", "ST7011J0"]
 METADATA_ESTUDIOS = {
     "SC4001E0": "Sleep Cassette · 20h 04m",
@@ -200,11 +200,11 @@ def _elegir_estudio():
 # Dibuja los checkboxes de canales y devuelve la lista de canales activos.
 # EEG Fpz-Cz siempre está activo y no se puede desmarcar (entrada mínima del
 # proyecto). Un canal opcional solo se puede activar si al menos un modelo
-# disponible lo necesita (ver model.canales_soportados()) -- si ningún
+# disponible lo necesita (ver model.canales_soportados()). Si ningún
 # modelo usa esa señal todavía, el checkbox aparece deshabilitado, no
 # oculto, para que quede claro que existe pero aún no está en uso.
 #
-# Esto SOLO decide qué señales se cargan del estudio -- la elección de qué
+# Esto SOLO decide qué señales se cargan del estudio, la elección de qué
 # modelo usar para predecir vive en la Pantalla 2.
 def _elegir_canales():
     st.subheader("2. Señales disponibles en este estudio")
@@ -251,11 +251,24 @@ def _elegir_canales():
 
 
 # Carga el estudio real con los canales elegidos y pasa a la Pantalla 2.
-# La predicción NO se calcula aquí -- se calcula en la Pantalla 2, según
+# La predicción NO se calcula aquí, se calcula en la Pantalla 2, según
 # el modelo que el usuario elija ahí (ver _elegir_modelo_y_predecir).
+#
+# Cualquier error al cargar el estudio se atrapa aquí: el detalle técnico
+# se imprime en consola para el equipo, y a pantalla solo llega un
+# mensaje en lenguaje llano, nunca una ruta de archivo ni un traceback.
 def _cargar_y_avanzar(estudio_id, canales_activos):
     with st.spinner("Cargando estudio..."):
-        dataset = model.cargar_estudio(estudio_id, canales_activos)
+        try:
+            dataset = model.cargar_estudio(estudio_id, canales_activos)
+        except Exception as error:
+            print(f"[app.py] Error cargando el estudio {estudio_id}: {error}")
+            st.error(
+                "No fue posible cargar el estudio seleccionado. "
+                "Contacte al equipo técnico si el problema persiste."
+            )
+            st.stop()
+
         st.session_state.dataset = dataset
         st.session_state.resultados_por_modelo = {}  # cache, se llena en Pantalla 2
 
@@ -264,7 +277,6 @@ def _cargar_y_avanzar(estudio_id, canales_activos):
     st.session_state.epoch_index = 0
     st.session_state.screen = "analysis"
     st.rerun()
-
 
 # Pantalla 1 completa: título, selector de estudio, selector de canales,
 # y botón para cargar.
@@ -498,7 +510,7 @@ def _render_senales_fisiologicas(dataset_usado):
 
 
 # Pantalla 2 completa: encabezado, selector de modelo, KPIs, distribución,
-# hipnograma, explorar época y señales fisiológicas -- en ese orden.
+# hipnograma, explorar época y señales fisiológicas en ese orden.
 def render_screen_analysis():
     study_id = st.session_state.selected_study
     canales_cargados = [nombre for nombre, activo in st.session_state.selected_channels.items() if activo]

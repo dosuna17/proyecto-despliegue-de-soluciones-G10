@@ -169,21 +169,38 @@ def _recortar_dataset(dataset, n_epocas):
     )
 
 
-# POST a la API real, traduciendo errores HTTP/conexión a un mensaje legible.
+# POST a la API real. Separa el error en dos capas: el detalle técnico completo se imprime en la consola
+# del servidor (para que el equipo pueda diagnosticarlo), y lo que se le devuelve a la interfaz es siempre
+# un mensaje en leguaje llano, sin rutas de archivos, tracksback ni detalles internos de la API. 
+# Esto evita que un usuario final vea información sensible o confusa.
 def _llamar_api(endpoint, payload, timeout):
+    url = f"{API_BASE_URL}{endpoint}"
     try:
-        respuesta = requests.post(f"{API_BASE_URL}{endpoint}", json=payload, timeout=timeout)
+        respuesta = requests.post(url, json=payload, timeout=timeout)
         respuesta.raise_for_status()
         return respuesta.json()
     except requests.exceptions.ConnectionError as error:
+        print(f"[model_interface] No se pudo conectar a {url}: {error}")
         raise RuntimeError(
-            f"No se pudo conectar a la API en {API_BASE_URL}. "
-            "¿Está corriendo `uvicorn app.api.main:app --reload`?"
+            "No fue posible conectarse al servicio de predicción en este "
+            "momento. Intente nuevamente en unos minutos o contacte al "
+            "equipo técnico si el problema persiste."
+        ) from error
+    except requests.exceptions.Timeout as error:
+        print(f"[model_interface] Timeout llamando a {url}: {error}")
+        raise RuntimeError(
+            "El servicio de predicción tardó demasiado en responder. "
+            "Intente nuevamente; si el problema persiste, contacte al "
+            "equipo técnico."
         ) from error
     except requests.exceptions.HTTPError as error:
         detalle = respuesta.json().get("detail", {})
-        mensaje = detalle.get("message", str(error)) if isinstance(detalle, dict) else str(error)
-        raise RuntimeError(f"La API respondió con error: {mensaje}") from error
+        mensaje_tecnico = detalle.get("message", str(error)) if isinstance(detalle, dict) else str(error)
+        print(f"[model_interface] Error HTTP en {url}: {mensaje_tecnico}")
+        raise RuntimeError(
+            "El servicio de predicción no pudo procesar la solicitud. "
+            "Contacte al equipo técnico si el problema persiste."
+        ) from error
 
 
 # Llama a /predict en bloques de exactamente 15 épocas (TinySleepNet).
