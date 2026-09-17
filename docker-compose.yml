@@ -24,3 +24,21 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sleep-staging-dashboard
+    command:
+      - streamlit
+      - run
+      - app/dashboard/app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
