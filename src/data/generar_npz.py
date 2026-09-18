@@ -33,8 +33,11 @@ from segmentation import extract_epochs, class_distribution   # noqa: E402
 # CONFIGURACIÓN -- ajusta rutas si hace falta
 # ---------------------------------------------------------------------
 DATA_DIR = Path("data/sleep-edfx/sleep-cassette")
-OUT_DIR = Path("data/interim/epochs_por_sujeto")
-CHANNEL_PICKS = ["EEG Fpz-Cz"]  # confirmado: canal único usado por el equipo
+# Entrega 3 -- Ruta B (TinySleepNet EEG+EOG): carpeta y canales distintos a la
+# corrida EEG-solo original, para no chocar con esos .npz ya generados (el
+# script es "reanudable" y saltaria todo si el OUT_DIR ya tiene archivos).
+OUT_DIR = Path("data/interim/epochs_por_sujeto_eeg_eog")
+CHANNEL_PICKS = ["EEG Fpz-Cz", "EOG horizontal"]
 
 
 def save_epoch_dataset(dataset, out_path: Path) -> None:
@@ -82,6 +85,18 @@ def main():
         out_path = OUT_DIR / f"{recording_id}_epochs.npz"
 
         if out_path.exists():
+            # Entrega 3 -- guarda contra reusar por accidente .npz generados
+            # con OTRA combinacion de canales si alguien cambia CHANNEL_PICKS
+            # pero se olvida de cambiar tambien OUT_DIR: sin este chequeo, el
+            # script "reanudable" saltaria estos archivos en silencio.
+            existing_channels = list(np.load(out_path, allow_pickle=True)["channel_names"])
+            if existing_channels != CHANNEL_PICKS:
+                raise RuntimeError(
+                    f"{out_path} ya existe pero fue generado con canales "
+                    f"{existing_channels}, no con CHANNEL_PICKS actual "
+                    f"{CHANNEL_PICKS}. Cambia OUT_DIR a una carpeta nueva "
+                    f"antes de correr con esta combinacion de canales."
+                )
             skipped += 1
             continue  # ya procesado en una corrida anterior -> reanudable
 

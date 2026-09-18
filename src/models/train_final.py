@@ -75,6 +75,10 @@ VAL_FRACTION = 0.15  # % de los sujetos de train reservado para early stopping
 # ahí para reaccionar. El TEST se carga completo, sin recortar.
 MAX_EPOCHS_PER_RECORDING = 500
 
+# Entrega 3 -- etiqueta legible para el tag signals_used de MLflow segun
+# el numero de canales real de los .npz (no asumir siempre EEG-solo).
+SIGNALS_USED_BY_N_CHANNELS = {1: "EEG Fpz-Cz", 2: "EEG+EOG", 3: "EEG+EOG+EMG"}
+
 # Tracking local (modo offline): usado automáticamente si no hay
 # MLFLOW_TRACKING_URI configurada. Nombre distinto al de train.py para
 # poder correr ambos scripts sin que se pisen los archivos .db.
@@ -152,7 +156,16 @@ def main():
     test_loader = build_dataloader(test_recs, seq_length=DEFAULT_SEQ_LENGTH,
                                     batch_size=DEFAULT_BATCH_SIZE, shuffle=False)
 
-    config = TinySleepNetConfig(use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights)
+    # Entrega 3 -- numero de canales tomado de los datos reales (1=EEG, 2=EEG+EOG, ...),
+    # NO asumido fijo, para que este mismo script sirva para cualquier variante multicanal.
+    n_input_channels = fit_recs[0].X.shape[1]
+    assert all(rec.X.shape[1] == n_input_channels for rec in fit_recs + val_recs + test_recs), (
+        "Grabaciones con distinto numero de canales entre fit/val/test -- revisar channel_picks"
+    )
+    config = TinySleepNetConfig(
+        use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights,
+        input_channels=n_input_channels,
+    )
     model = TinySleepNet(config).to(DEVICE)
     criterion = build_class_weighted_loss(class_weights, device=DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=ADAM_BETAS)
@@ -167,10 +180,19 @@ def main():
     # script se cae con un traceback -- aunque todo el trabajo real ya
     # esté guardado localmente para ese punto. Se maneja el run de
     # forma manual para poder envolver también ESE paso final.
-    mlflow.start_run(run_name="tinysleepnet_final")
+    # Entrega 3 -- se calcula ANTES de start_run() para poder usarlo en el
+    # nombre del run (ej. "tinysleepnet_final_EEG+EOG") y asi identificar
+    # cada variante de canales directamente en la lista de runs de MLflow,
+    # sin tener que renombrar a mano despues.
+    signals_used_tag = SIGNALS_USED_BY_N_CHANNELS.get(n_input_channels, f"{n_input_channels}_canales")
+    # Entrega 3 -- slug seguro para nombres de archivo (sin espacios ni "+"),
+    # usado en checkpoint/modelo/metricas para que cada combinacion de
+    # canales guarde en su propio archivo y nunca sobreescriba a otra.
+    signals_used_slug = signals_used_tag.replace(" ", "_").replace("+", "-")
+    mlflow.start_run(run_name=f"tinysleepnet_final_{signals_used_tag}")
     try:
         mlflow.set_tag("model_type", "advanced")
-        mlflow.set_tag("signals_used", "EEG Fpz-Cz")
+        mlflow.set_tag("signals_used", signals_used_tag)
         mlflow.set_tag("stage", "final_model")
         mlflow.log_params(
             {
@@ -241,8 +263,8 @@ def main():
             # (no solo el guardado final, que solo ocurre si TODO el
             # script termina sin errores).
             if epoch % CHECKPOINT_EVERY_N_EPOCHS == 0:
-                torch.save(best_state, "checkpoint_intermedio.pth")
-                print(f"  [checkpoint] guardado en checkpoint_intermedio.pth (mejor hasta ahora: "
+                torch.save(best_state, f"checkpoint_intermedio_{signals_used_slug}.pth")
+                print(f"  [checkpoint] guardado en checkpoint_intermedio_{signals_used_slug}.pth (mejor hasta ahora: "
                       f"val_macroF1={best_val_macro_f1:.4f})")
 
         model.load_state_dict(best_state)
@@ -261,16 +283,16 @@ def main():
         # (log_metrics, log_artifact, log_model -- cualquier hipo de red
         # en una corrida larga sin supervisión), el modelo y las métricas
         # ya están a salvo en disco.
-        cm_path = "confusion_matrix_test.png"
+        cm_path = f"confusion_matrix_test_{signals_used_slug}.png"
         save_confusion_matrix_plot(test_metrics["confusion_matrix"], CLASS_NAMES, cm_path)
         print(f"Matriz de confusión guardada localmente en: {cm_path}")
 
-        model_path = "tinysleepnet_final.pth"
+        model_path = f"tinysleepnet_final_{signals_used_slug}.pth"
         torch.save(model.state_dict(), model_path)
         print(f"Modelo guardado localmente en: {model_path}")
 
         import json
-        metrics_path = "test_metrics_final.json"
+        metrics_path = f"test_metrics_final_{signals_used_slug}.json"
         with open(metrics_path, "w") as f:
             json.dump(test_metrics, f, indent=2)
         print(f"Métricas de test guardadas localmente en: {metrics_path}")
