@@ -20,7 +20,7 @@ def _payload() -> dict:
 
 
 def test_predict_returns_a_prediction_for_each_epoch(tmp_path, monkeypatch) -> None:
-    checkpoint = tmp_path / "tinysleepnet_final.pth"
+    checkpoint = tmp_path / "tinysleepnet_final_eeg_eog.pth.pth"
     model = TinySleepNet(TinySleepNetConfig())
     torch.save(model.state_dict(), checkpoint)
     monkeypatch.setenv("MODEL_PATH", str(checkpoint))
@@ -56,7 +56,7 @@ def test_predict_rejects_an_invalid_model_artifact_path() -> None:
 def test_find_run_id_for_artifact_returns_latest_matching_run() -> None:
     matching_artifact = SimpleNamespace(
         is_dir=False,
-        path="tinysleepnet_final.pth",
+        path="tinysleepnet_final_eeg_eog.pth.pth",
     )
     client = SimpleNamespace(
         search_experiments=lambda view_type: [
@@ -74,7 +74,7 @@ def test_find_run_id_for_artifact_returns_latest_matching_run() -> None:
         ),
     )
 
-    result = find_run_id_for_artifact(client, "tinysleepnet_final.pth")
+    result = find_run_id_for_artifact(client, "tinysleepnet_final_eeg_eog.pth.pth")
 
     assert result == "newest-run"
 
