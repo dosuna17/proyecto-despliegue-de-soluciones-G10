@@ -60,11 +60,13 @@ MODELOS_DISPONIBLES = {
     "baseline": {
         "etiqueta": "XGBoost (línea base)",
         "canales_requeridos": ["EEG Fpz-Cz", "EEG Pz-Oz"],
+        "model_artifact": "best-xgboost-multicanal.joblib",
     },
-    # "avanzado": {
-    #     "etiqueta": "TinySleepNet",
-    #     "canales_requeridos": ["EEG Fpz-Cz"],
-    # },  # <- se habilita cuando el cnn.py de Gabriel llegue a main
+    "avanzado": {
+        "etiqueta": "TinySleepNet",
+        "canales_requeridos": ["EEG Fpz-Cz", "EOG horizontal"],
+        "model_artifact": "tinysleepnet_final_eeg_eog.pth",
+    },  # <- se habilita cuando el cnn.py de Gabriel llegue a main
 }
 
 
