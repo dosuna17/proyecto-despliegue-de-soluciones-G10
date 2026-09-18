@@ -42,3 +42,9 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+    environment:
+      SLEEP_STAGING_DATA_ROOT: /data/sleep-edfx
+      SLEEP_STAGING_API_URL: http://api:8000
+    volumes:
+      - ${SLEEP_STAGING_DATA_ROOT_HOST}:/data/sleep-edfx
+      - ./app:/app/app
