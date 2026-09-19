@@ -81,6 +81,10 @@ EARLY_STOPPING_PATIENCE = 5
 #     horas de sueño -- una porción representativa, no la noche completa.
 MAX_EPOCHS_PER_RECORDING = 500
 
+# Entrega 3 -- etiqueta legible para el tag signals_used de MLflow segun
+# el numero de canales real de los .npz (no asumir siempre EEG-solo).
+SIGNALS_USED_BY_N_CHANNELS = {1: "EEG Fpz-Cz", 2: "EEG+EOG", 3: "EEG+EOG+EMG"}
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Tracking local (modo offline): usado automáticamente si no hay
@@ -199,7 +203,16 @@ def train_one_fold(
         val_recs, seq_length=DEFAULT_SEQ_LENGTH, batch_size=DEFAULT_BATCH_SIZE, shuffle=False
     )
 
-    config = TinySleepNetConfig(use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights)
+    # Entrega 3 -- numero de canales tomado de los datos reales (1=EEG, 2=EEG+EOG, ...),
+    # NO asumido fijo, para que este mismo script sirva para cualquier variante multicanal.
+    n_input_channels = train_recs[0].X.shape[1]
+    assert all(rec.X.shape[1] == n_input_channels for rec in train_recs + val_recs), (
+        "Grabaciones con distinto numero de canales dentro del mismo fold -- revisar channel_picks"
+    )
+    config = TinySleepNetConfig(
+        use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights,
+        input_channels=n_input_channels,
+    )
     model = TinySleepNet(config).to(DEVICE)
     criterion = build_class_weighted_loss(class_weights, device=DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=ADAM_BETAS)
@@ -267,10 +280,17 @@ def main():
     train_codes, test_codes = get_train_test_subject_codes()
     folds = make_subject_kfold_splits(train_codes)
 
-    mlflow.start_run(run_name="tinysleepnet_cv")
+    # Entrega 3 -- probe liviano (1 sujeto) solo para saber cuantos canales
+    # trae este .npz y taggear correctamente en MLflow.
+    _probe_rec = load_npz_recordings(subject_codes=train_codes[:1])[0]
+    n_input_channels = _probe_rec.X.shape[1]
+    signals_used_tag = SIGNALS_USED_BY_N_CHANNELS.get(n_input_channels, f"{n_input_channels}_canales")
+    del _probe_rec
+
+    mlflow.start_run(run_name=f"tinysleepnet_cv_{signals_used_tag}")
     try:
         mlflow.set_tag("model_type", "advanced")
-        mlflow.set_tag("signals_used", "EEG Fpz-Cz")
+        mlflow.set_tag("signals_used", signals_used_tag)
         mlflow.log_params(
             {
                 "architecture": "TinySleepNet (CNN1D + LSTM)",
