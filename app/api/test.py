@@ -5,7 +5,7 @@ import mlflow
 
 MLFLOW_TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI",
-    "http://32.194.151.154:5000",
+    "http://18.119.196.100:5000",
 )
 
 MLFLOW_RUN_ID = os.getenv(
