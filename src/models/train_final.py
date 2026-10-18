@@ -15,7 +15,7 @@ El conjunto de TEST se evalúa UNA SOLA VEZ, al final, con el mejor
 checkpoint -- nunca se usa para ninguna decisión de entrenamiento.
 
 Requiere MLFLOW_TRACKING_URI configurada (igual que train.py), ej.:
-    $env:MLFLOW_TRACKING_URI = "http://<IP-EC2>:5000"
+    $env:MLFLOW_TRACKING_URI = "https://18.119.196.100"
     python src\\models\\train_final.py
 """
 from __future__ import annotations

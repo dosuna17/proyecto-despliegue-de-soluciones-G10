@@ -4,7 +4,7 @@ por sujeto y logging a MLflow.
 
 Requiere la variable de entorno MLFLOW_TRACKING_URI configurada antes
 de correr este script, por ejemplo (PowerShell):
-    $env:MLFLOW_TRACKING_URI = "http://<EC2_PUBLIC_IP>:5000"
+    $env:MLFLOW_TRACKING_URI = "https://18.119.196.100"
     python src\\models\\train.py
 
 MODO OFFLINE (recomendado dado lo inestable que ha sido la EC2 del
