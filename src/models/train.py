@@ -59,7 +59,7 @@ from data.dataset import (  # noqa: E402
 )
 from data.segmentation import INT_TO_CLASS  # noqa: E402 -- mapeo entero->nombre de clase
 from evaluation.metrics import evaluate_classification  # noqa: E402 -- metrics.py real de Santiago
-from models.cnn import TinySleepNet, TinySleepNetConfig, build_class_weighted_loss  # noqa: E402
+from sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig, build_class_weighted_loss  # noqa: E402
 
 CLASS_NAMES = ["W", "N1", "N2", "N3", "REM"]
 

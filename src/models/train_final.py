@@ -44,7 +44,7 @@ from data.dataset import (  # noqa: E402
     DEFAULT_BATCH_SIZE,
     DEFAULT_SEQ_LENGTH,
 )
-from models.cnn import TinySleepNet, TinySleepNetConfig, build_class_weighted_loss  # noqa: E402
+from sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig, build_class_weighted_loss  # noqa: E402
 from models.train import (  # noqa: E402 -- reutiliza lo ya construido y probado
     CLASS_NAMES,
     LEARNING_RATE,
