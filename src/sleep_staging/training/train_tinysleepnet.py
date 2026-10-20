@@ -36,6 +36,7 @@ el formato de dict plano que ya usaba el resto del pipeline.
 from __future__ import annotations
 
 import os
+import random
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -44,6 +45,7 @@ import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
+import yaml
 from sklearn.metrics import f1_score  # se sigue usando para train_macro_f1 (liviano, cada epoch)
 import matplotlib
 matplotlib.use("Agg")  # sin ventana gráfica, solo guardar a archivo
@@ -66,16 +68,36 @@ from data.segmentation import INT_TO_CLASS  # noqa: E402 -- mapeo entero->nombre
 from evaluation.metrics import evaluate_classification  # noqa: E402 -- metrics.py real de Santiago
 from sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig, build_class_weighted_loss  # noqa: E402
 
+# Ruta del archivo de hiperparametros (se ubica desde la raiz del repositorio).
+CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "models" / "tinysleepnet.yaml"
+
+
+def load_config(path=CONFIG_PATH):
+    """Lee los hiperparametros desde configs/models/tinysleepnet.yaml."""
+    with open(path, encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def set_seed(seed: int) -> None:
+    """Fija las semillas de Python, NumPy y PyTorch para que los resultados se repitan."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+CONFIG = load_config()
+
 CLASS_NAMES = ["W", "N1", "N2", "N3", "REM"]
 
 # --- Hiperparámetros de entrenamiento (paper, Sección III.B) ---
-LEARNING_RATE = 1e-4
-ADAM_BETAS = (0.9, 0.999)
-GRAD_CLIP_NORM = 5.0
+LEARNING_RATE = CONFIG["training"]["learning_rate"]
+ADAM_BETAS = tuple(CONFIG["training"]["adam_betas"])
+GRAD_CLIP_NORM = CONFIG["training"]["grad_clip_norm"]
 
 # --- Adaptación propia por restricciones de tiempo (ver docstring) ---
-MAX_EPOCHS = 20
-EARLY_STOPPING_PATIENCE = 5
+MAX_EPOCHS = CONFIG["training"]["cv"]["max_epochs"]
+EARLY_STOPPING_PATIENCE = CONFIG["training"]["cv"]["early_stopping_patience"]
 
 # --- Adaptación propia por restricciones de MEMORIA (ver comentario de
 #     load_npz_recordings en dataset.py): cargar las grabaciones
@@ -84,7 +106,7 @@ EARLY_STOPPING_PATIENCE = 5
 #     aleatoria de a lo sumo este número de épocas. Ajustar hacia arriba
 #     si la máquina tiene más RAM libre disponible. ~500 épocas ~= 4.2
 #     horas de sueño -- una porción representativa, no la noche completa.
-MAX_EPOCHS_PER_RECORDING = 500
+MAX_EPOCHS_PER_RECORDING = CONFIG["data"]["max_epochs_per_recording"]
 
 # Entrega 3 -- etiqueta legible para el tag signals_used de MLflow segun
 # el numero de canales real de los .npz (no asumir siempre EEG-solo).
@@ -270,6 +292,7 @@ def train_one_fold(
 # 4. Cross-validation completa + logging a MLflow
 # ---------------------------------------------------------------------
 def run_cv():
+    set_seed(CONFIG["seed"])
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
     if not tracking_uri:
         tracking_uri = f"sqlite:///{LOCAL_TRACKING_DB}"
@@ -351,9 +374,9 @@ def run_cv():
 #     que corte demasiado pronto si val_macro_f1 sigue siendo ruidosa
 #     (como se observó hoy), sin arriesgar correr 10h completas sobre
 #     un modelo ya convergido.
-MAX_EPOCHS_FINAL = 100
-PATIENCE_FINAL = 15
-VAL_FRACTION = 0.15  # % de los sujetos de train reservado para early stopping
+MAX_EPOCHS_FINAL = CONFIG["training"]["final"]["max_epochs"]
+PATIENCE_FINAL = CONFIG["training"]["final"]["early_stopping_patience"]
+VAL_FRACTION = CONFIG["data"]["val_fraction"]  # % de los sujetos de train reservado para early stopping
 
 # MAX_EPOCHS_PER_RECORDING y SIGNALS_USED_BY_N_CHANNELS son los mismos de la validación cruzada (definidos arriba).
 # En el entrenamiento final el TEST se carga completo, sin recortar.
@@ -366,7 +389,7 @@ LOCAL_TRACKING_DB_FINAL = "mlflow_local_final.db"
 # Checkpoint local periódico: guarda el mejor modelo cada N épocas
 # (no solo al final), para no perder todo el progreso si algo falla
 # tarde en la noche (corte de luz, error de red, etc.)
-CHECKPOINT_EVERY_N_EPOCHS = 5
+CHECKPOINT_EVERY_N_EPOCHS = CONFIG["training"]["final"]["checkpoint_every_n_epochs"]
 
 
 def make_internal_validation_split(train_codes, val_fraction: float = VAL_FRACTION, seed: int = 42):
@@ -404,6 +427,7 @@ def save_confusion_matrix_plot(cm: list, class_names: list, out_path: str) -> No
 
 
 def run_final():
+    set_seed(CONFIG["seed"])
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
     if not tracking_uri:
         tracking_uri = f"sqlite:///{LOCAL_TRACKING_DB_FINAL}"
