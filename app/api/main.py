@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.data.segmentation import CLASS_NAMES, EpochDataset
 from src.preprocessing.feature_engineering import extract_features
-from src.models.cnn import TinySleepNet, TinySleepNetConfig
+from src.sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig
 
 SAMPLE_RATE_HZ = 100
 EPOCH_SECONDS = 30
