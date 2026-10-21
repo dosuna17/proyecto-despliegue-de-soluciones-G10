@@ -5,7 +5,7 @@ import torch
 from fastapi.testclient import TestClient
 
 from app.api.main import app, find_run_id_for_artifact, load_model
-from src.models.cnn import TinySleepNet, TinySleepNetConfig
+from src.sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig
 
 from sklearn.preprocessing import LabelEncoder
 from src.data.segmentation import CLASS_NAMES
