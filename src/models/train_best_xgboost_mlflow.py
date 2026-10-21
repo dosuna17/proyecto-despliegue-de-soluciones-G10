@@ -19,7 +19,7 @@ from src.data.segmentation import CLASS_NAMES, INT_TO_CLASS
 from src.evaluation.metrics import evaluate_classification
 
 
-MLFLOW_TRACKING_URI = "http://32.194.151.154:5000"
+MLFLOW_TRACKING_URI = "https://18.119.196.100"
 MLFLOW_EXPERIMENT_NAME = "baseline"
 
 TARGET_COLUMN = "y"
