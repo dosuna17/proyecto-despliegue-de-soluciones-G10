@@ -17,9 +17,9 @@ from xgboost import XGBClassifier
 
 from src.data.segmentation import CLASS_NAMES, INT_TO_CLASS
 from src.evaluation.metrics import evaluate_classification
+from src.config import MLFLOW_TRACKING_URI
 
 
-MLFLOW_TRACKING_URI = "https://18.119.196.100"
 MLFLOW_EXPERIMENT_NAME = "baseline"
 
 TARGET_COLUMN = "y"

@@ -25,7 +25,7 @@ a partir de señales de polisomnografía (Sleep-EDFx).
 │   ├── interim/                  # Datos intermedios
 │   ├── processed/                # Datos preparados para modelado
 │   └── sleep-edfx.dvc            # Referencia DVC al conjunto Sleep-EDFx
-├── models/                       # Referencias locales; sin pesos en Git
+├── modelos/                      # Referencias locales; sin pesos en Git
 ├── notebooks/
 │   └── EDA_microproyecto_G5.ipynb
 ├── reports/
@@ -106,7 +106,7 @@ para cargar el modelo registrado desde MLflow y realizar inferencias.
 `POST /predict` recibe 15 epocas consecutivas del canal `EEG Fpz-Cz`.
 Cada epoca debe contener 3.000 muestras (30 segundos a 100 Hz) en microvoltios
 (`uV`). La respuesta incluye una prediccion, confianza y probabilidades para
-cada epoca. Coloque `tinysleepnet_final.pth` en `models/` o configure
+cada epoca. Coloque `tinysleepnet_final.pth` en `modelos/` o configure
 `MODEL_PATH` con la ruta al checkpoint antes de iniciar la API.
 ## MLflow Tracking Server
 
@@ -116,6 +116,9 @@ El proyecto utiliza un servidor MLflow desplegado en AWS EC2.
 
 Todos los experimentos deben utilizar la siguiente variable de entorno:
 
-```bash
-export MLFLOW_TRACKING_URI=https://18.119.196.100
+Configura una sola vez `MLFLOW_TRACKING_URI` en `.env`, copiando `.env.example`
+como plantilla. Docker Compose y los scripts Python leen ese mismo archivo.
+
+```powershell
+Copy-Item .env.example .env
 ```
