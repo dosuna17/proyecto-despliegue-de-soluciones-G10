@@ -20,12 +20,12 @@ from pydantic import BaseModel, Field, field_validator
 from src.data.segmentation import CLASS_NAMES, EpochDataset
 from src.preprocessing.feature_engineering import extract_features
 from src.sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig
+from src.config import MLFLOW_TRACKING_URI
 
 SAMPLE_RATE_HZ = 100
 EPOCH_SECONDS = 30
 SAMPLES_PER_EPOCH = SAMPLE_RATE_HZ * EPOCH_SECONDS
 SEQUENCE_LENGTH = 15
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "https://18.119.196.100")
 MLFLOW_ARTIFACT_PATH = os.getenv("MLFLOW_ARTIFACT_PATH", "tinysleepnet_final_eeg_eog.pth")
 XGBOOST_ARTIFACT_PATH = os.getenv(
     "XGBOOST_ARTIFACT_PATH", "best-xgboost-multicanal.joblib"

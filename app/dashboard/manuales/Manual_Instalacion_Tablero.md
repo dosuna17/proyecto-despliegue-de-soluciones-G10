@@ -118,7 +118,7 @@ El tablero se conecta a la API usando el nombre del servicio dentro de la red in
   docker compose build --no-cache dashboard
   docker compose up -d
   ```
-  Este paso puede tardar varios minutos (instalación de dependencias de Python). Para desarrollo activo, el `docker-compose.yml` del repositorio monta la carpeta `app/` como volumen (`./app:/app/app`), por lo que los cambios en el código del tablero se reflejan de inmediato sin reconstruir la imagen, sí es necesario reconstruir si cambian `requirements.txt`, `src/` o los modelos en `models/`.
+  Este paso puede tardar varios minutos (instalación de dependencias de Python). Para desarrollo activo, el `docker-compose.yml` del repositorio monta la carpeta `app/` como volumen (`./app:/app/app`), por lo que los cambios en el código del tablero se reflejan de inmediato sin reconstruir la imagen, sí es necesario reconstruir si cambian `requirements.txt`, `src/` o los modelos en `modelos/`.
 
 ---
 

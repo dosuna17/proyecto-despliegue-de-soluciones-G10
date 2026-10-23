@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-https://18.119.196.100}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:?Define MLFLOW_TRACKING_URI en .env}
       MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-tinysleepnet_final_eeg_eog.pth}
       XGBOOST_ARTIFACT_PATH: ${XGBOOST_ARTIFACT_PATH:-best-xgboost-multicanal.joblib}
       MODEL_PATH: ${MODEL_PATH:-}
