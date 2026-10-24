@@ -8,6 +8,7 @@ features/labels — eso vive en segmentation.py.
 """
 from __future__ import annotations
 
+import warnings
 import glob
 import os
 from dataclasses import dataclass
@@ -26,7 +27,7 @@ class Subject:
     hypnogram_path: str
 
 
-def load_psg(path: str, verbose: bool = False) -> mne.io.BaseRaw:
+def load_psg(path: str, verbose: bool = False, canales: List[str] = None) -> mne.io.BaseRaw:
     """
     Carga un archivo *-PSG.edf como un objeto mne.io.Raw (señal continua).
 
@@ -35,7 +36,10 @@ def load_psg(path: str, verbose: bool = False) -> mne.io.BaseRaw:
     """
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Archivo PSG no encontrado: {path}")
-    return mne.io.read_raw_edf(path, preload=False, verbose=verbose)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        raw = mne.io.read_raw_edf(path, include=canales, preload=False, verbose=verbose)
+    return raw
 
 
 def load_hypnogram(path: str) -> mne.Annotations:
@@ -46,10 +50,10 @@ def load_hypnogram(path: str) -> mne.Annotations:
     p. ej. ("Sleep stage W", onset=0.0, duration=30630.0).
     """
     if not os.path.isfile(path):
-        raise FileNotFoundError(f"Archivo Hypnogram no encontrado: {path}")
+        raise FileNotFoundError("Archivo Hypnogram no encontrado.")
     annotations = mne.read_annotations(path)
     if len(annotations) == 0:
-        raise ValueError(f"El archivo de hypnograma no contiene anotaciones: {path}")
+        raise ValueError("El archivo de hypnograma no contiene anotaciones.")
     return annotations
 
 
@@ -80,8 +84,7 @@ def load_subject(
         # grilla de épocas en segmentation.py nunca excede la señal real.
         print(
             f"[loader] Aviso: el hypnograma termina en {hypno_end:.1f}s pero el PSG "
-            f"dura {psg_duration:.1f}s. Probablemente es la cola '?' de relleno; "
-            f"se ignorará al extraer épocas ({psg_path})."
+            f"dura {psg_duration:.1f}s. Probablemente es la cola '?' de relleno."
         )
 
     if subject_id is None:
