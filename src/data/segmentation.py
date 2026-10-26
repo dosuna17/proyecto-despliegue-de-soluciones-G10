@@ -2,6 +2,12 @@
 Ventaneo (30s) y etiquetado a partir de la señal cruda + anotaciones
 crudas cargadas por loader.py.
 
+Segmentación (igual que en 01_EDA):
+    Los intervalos del hypnograma agrupan épocas consecutivas con la misma
+    etiqueta y siempre duran un múltiplo de 30 s. Cada intervalo se parte
+    en duracion // 30 épocas de 30 s que conservan la etiqueta del
+    intervalo, y se recorta la señal en [inicio, inicio + 30 s).
+
 Esquema de etiquetas (según especificación del proyecto):
     El hypnograma original usa el manual antiguo Rechtschaffen & Kales,
     con 6 clases principales {W, 1, 2, 3, 4, R}, más dos anotaciones
@@ -9,12 +15,12 @@ Esquema de etiquetas (según especificación del proyecto):
     época no clasificable) y '?' (época no anotada).
 
     Este módulo:
-      1. Descarta cualquier anotación que no sea una de las 6 clases
-         R&K permitidas -> se eliminan 'M' y '?' (y cualquier otra
-         etiqueta no reconocida).
-      2. Fusiona los estadíos '3' y '4' en una sola clase "N3".
-      3. Devuelve las 5 clases resultantes como nombres explícitos:
-             W, N1, N2, N3, REM
+      1. Fusiona los estadíos '3' y '4' en una sola clase "N3".
+      2. Conserva solo las clases pedidas en `classes` (ver
+         extract_epochs). Por defecto son las 5 clases de sueño
+         W, N1, N2, N3, REM, es decir, se eliminan 'M' y '?'; se pueden
+         conservar pasándolas explícitamente. Cualquier otra etiqueta no
+         reconocida se descarta siempre.
 
 """
 from __future__ import annotations
@@ -31,33 +37,33 @@ EPOCH_LEN_SEC = 30.0
 # es microvoltios (µV), así que se reescala por defecto al extraer épocas.
 VOLTS_TO_MICROVOLTS = 1e6
 
-# Descripción cruda del hypnograma -> etiqueta canónica R&K
-_RAW_TO_STAGE = {
+# Descripción cruda del hypnograma -> clase final (igual que MAPEO_CLASES
+# en 01_EDA; los estadíos 3 y 4 de R&K se fusionan en N3). Cualquier
+# descripción que no esté aquí se descarta siempre.
+_RAW_TO_CLASS = {
     "Sleep stage W": "W",
-    "Sleep stage 1": "1",
-    "Sleep stage 2": "2",
-    "Sleep stage 3": "3",
-    "Sleep stage 4": "4",
-    "Sleep stage R": "R",
-}
-# Todo lo demás ('Sleep stage ?', 'Movement time', 'M', etc.) se descarta
-# automáticamente por no estar en el diccionario anterior.
-
-# Etiqueta canónica -> clase final (3 y 4 se fusionan en N3)
-_STAGE_TO_CLASS = {
-    "W": "W",
-    "1": "N1",
-    "2": "N2",
-    "3": "N3",
-    "4": "N3",
-    "R": "REM",
+    "Sleep stage 1": "N1",
+    "Sleep stage 2": "N2",
+    "Sleep stage 3": "N3",
+    "Sleep stage 4": "N3",
+    "Sleep stage R": "REM",
+    "Movement time": "M",
+    "Sleep stage ?": "?",
 }
 
 # Orden canonico de clases usado por datasets, metricas, graficas y modelos.
+# Es también el conjunto de clases que conserva extract_epochs por defecto.
 CLASS_NAMES = ["W", "N1", "N2", "N3", "REM"]
 
+# Todas las clases que se pueden pedir en extract_epochs(classes=...).
+ALL_CLASS_NAMES = CLASS_NAMES + ["M", "?"]
+
+# Estadíos de sueño real, usados para ubicar el inicio/fin del sueño.
+SLEEP_CLASS_NAMES = ["N1", "N2", "N3", "REM"]
+
 # Mapeos auxiliares para compatibilidad con notebooks/artefactos antiguos.
-CLASS_TO_INT: Dict[str, int] = {name: idx for idx, name in enumerate(CLASS_NAMES)}
+# M y ? quedan al final para no cambiar los enteros 0-4 de las 5 clases.
+CLASS_TO_INT: Dict[str, int] = {name: idx for idx, name in enumerate(ALL_CLASS_NAMES)}
 INT_TO_CLASS: Dict[int, str] = {v: k for k, v in CLASS_TO_INT.items()}
 
 
@@ -97,7 +103,7 @@ class EpochDataset:
     subject_code: str      # sujeto persistente entre noches, p. ej. '00'
     night: str             # número de noche, p. ej. '1'
     X: np.ndarray          # (n_epochs, n_channels, n_samples_por_epoca)
-    y: np.ndarray          # (n_epochs,) nombres de clase en CLASS_NAMES
+    y: np.ndarray          # (n_epochs,) nombres de clase (las pedidas en `classes`)
     recording_ids: np.ndarray   # (n_epochs,) str — recording_id repetido, uno por época
     subject_codes: np.ndarray   # (n_epochs,) str — subject_code repetido, uno por época
     channel_names: List[str]
@@ -111,53 +117,62 @@ class EpochDataset:
         return self.recording_id
 
 
-def _annotations_to_valid_intervals(
+def _validate_classes(classes: Sequence[str]) -> List[str]:
+    """Verifica que `classes` solo tenga clases conocidas y la devuelve como lista."""
+    unknown = [c for c in classes if c not in ALL_CLASS_NAMES]
+    if unknown:
+        raise ValueError(f"Clases desconocidas: {unknown}. Opciones válidas: {ALL_CLASS_NAMES}")
+    if not classes:
+        raise ValueError("`classes` no puede estar vacío")
+    return list(classes)
+
+
+def annotations_to_epochs(
     annotations: mne.Annotations,
-) -> List[Tuple[float, float, str]]:
+    epoch_len: float = EPOCH_LEN_SEC,
+    classes: Sequence[str] = CLASS_NAMES,
+) -> List[Tuple[float, Optional[str]]]:
     """
-    Convierte las anotaciones crudas en intervalos (start, end, clase_final),
-    quedándose solo con las 6 etiquetas R&K permitidas y aplicando la
-    fusión 3+4 -> N3. Descarta '?' y 'M' (u otra etiqueta no reconocida).
+    Divide cada intervalo del hypnograma en épocas consecutivas de
+    `epoch_len` segundos, igual que en 01_EDA: un intervalo de 300 s con
+    'Sleep stage 2' se convierte en 10 épocas N2 que empiezan en
+    onset, onset + 30, ..., onset + 270.
+
+    classes: clases a conservar, cualquier subconjunto de ALL_CLASS_NAMES
+    (default CLASS_NAMES = W, N1, N2, N3, REM). Por ejemplo, para
+    conservar también las épocas de movimiento: CLASS_NAMES + ["M"].
+
+    Los intervalos del hypnograma son múltiplos de 30 s (comprobado en
+    01_EDA); si alguno de las clases conservadas no lo es se lanza un
+    error en vez de truncarlo.
+
+    Devuelve una lista de (inicio_seg, clase_final) ordenada por inicio.
+    clase_final es None para las épocas de clases no pedidas en `classes`
+    (o de descripciones no reconocidas), para que el llamador pueda
+    contarlas como descartadas.
     """
-    intervals = []
+    keep = set(_validate_classes(classes))
+
+    epochs = []
     for onset, duration, desc in zip(
         annotations.onset, annotations.duration, annotations.description
     ):
-        stage = _RAW_TO_STAGE.get(desc)
-        if stage is None:
-            continue  # descarta 'Sleep stage ?', 'Movement time', etc.
-        intervals.append((onset, onset + duration, _STAGE_TO_CLASS[stage]))
-    intervals.sort(key=lambda t: t[0])
-    return intervals
+        class_name = _RAW_TO_CLASS.get(desc)
+        if class_name not in keep:
+            class_name = None
 
+        n_epochs = duration / epoch_len
+        if class_name is not None and not np.isclose(n_epochs, round(n_epochs)):
+            raise ValueError(
+                f"Intervalo '{desc}' en onset={onset}s dura {duration}s, "
+                f"que no es múltiplo de {epoch_len}s"
+            )
 
-def _label_for_epoch(
-    epoch_start: float,
-    epoch_end: float,
-    intervals: Sequence[Tuple[float, float, str]],
-) -> Optional[str]:
-    """
-    Devuelve la clase final cuyo intervalo contiene el punto medio de la
-    época, o None si el punto medio cae en una región descartada/sin anotar.
-    """
-    midpoint = (epoch_start + epoch_end) / 2.0
-    for start, end, class_name in intervals:
-        if start <= midpoint < end:
-            return class_name
-    return None
+        for k in range(int(round(n_epochs))):
+            epochs.append((onset + k * epoch_len, class_name))
 
-
-def build_epoch_grid(
-    total_duration_sec: float, epoch_len: float = EPOCH_LEN_SEC
-) -> List[Tuple[float, float]]:
-    """
-    Construye una grilla fija de ventanas [start, end) sin solapamiento
-    sobre toda la grabación, empezando en t=0. Cualquier cola final
-    menor a epoch_len se descarta (nunca se rellena ni se fusiona con
-    la ventana anterior).
-    """
-    n_full_epochs = int(total_duration_sec // epoch_len)
-    return [(i * epoch_len, (i + 1) * epoch_len) for i in range(n_full_epochs)]
+    epochs.sort(key=lambda t: t[0])
+    return epochs
 
 
 def extract_epochs(
@@ -168,11 +183,19 @@ def extract_epochs(
     channel_picks: Optional[Sequence[str]] = None,
     scale_to_uv: bool = True,
     dtype: np.dtype = np.float32,
+    classes: Sequence[str] = CLASS_NAMES,
 ) -> EpochDataset:
     """
     Segmenta la señal continua de una grabación (sujeto/noche) en épocas
-    fijas de 30s y les asigna una etiqueta de texto, descartando toda época
-    cuya etiqueta no sea una de las 5 clases permitidas (W, N1, N2, N3, REM).
+    de 30s a partir de los intervalos del hypnograma (ver
+    `annotations_to_epochs`): cada intervalo se parte en épocas de 30s que
+    heredan su etiqueta. Se descarta toda época cuya etiqueta no esté en
+    `classes` o que se salga de la señal.
+
+    classes: clases a conservar, cualquier subconjunto de ALL_CLASS_NAMES
+    = [W, N1, N2, N3, REM, M, ?]. Por defecto CLASS_NAMES (las 5 clases
+    de sueño); p. ej. classes=CLASS_NAMES + ["M"] conserva también las
+    épocas de movimiento.
 
     channel_picks: lista opcional de nombres de canal a conservar
     (p. ej. ['EEG Fpz-Cz'] o ['EEG Fpz-Cz', 'EEG Pz-Oz']). Si es None,
@@ -196,8 +219,7 @@ def extract_epochs(
     total_duration = raw.n_times / sfreq
     samples_per_epoch = int(round(epoch_len * sfreq))
 
-    intervals = _annotations_to_valid_intervals(annotations)
-    grid = build_epoch_grid(total_duration, epoch_len)
+    epochs = annotations_to_epochs(annotations, epoch_len, classes)
 
     raw.load_data(verbose=False)
     data = raw.get_data().astype(dtype)  # (n_channels, n_samples), en voltios
@@ -209,8 +231,11 @@ def extract_epochs(
     X_list, y_list = [], []
     dropped = 0
 
-    for start, end in grid:
-        class_name = _label_for_epoch(start, end, intervals)
+    for start, class_name in epochs:
+        # Épocas del relleno final del hypnograma (el '?' que completa el
+        # archivo hasta 24 h) caen fuera de la señal: no cuentan como descartadas
+        if start >= total_duration:
+            continue
         if class_name is None:
             dropped += 1
             continue
@@ -343,18 +368,19 @@ def trim_wake_edges(dataset: EpochDataset, buffer_epochs: int = 60) -> EpochData
     Debe aplicarse por grabación individual, ANTES de concatenar varios
     sujetos -- los límites de recorte son específicos de cada noche.
     """
-    wake_label = "W"
+    # Solo N1/N2/N3/REM marcan sueño real: M o ? (si se conservaron) no
+    # deben mover los límites del recorte.
     labels = np.array([label_to_class_name(label) for label in dataset.y])
-    non_wake_idx = np.where(labels != wake_label)[0]
+    sleep_idx = np.where(np.isin(labels, SLEEP_CLASS_NAMES))[0]
 
-    if len(non_wake_idx) == 0:
+    if len(sleep_idx) == 0:
         raise ValueError(
             f"La grabación {dataset.recording_id} no tiene ninguna época de sueño real "
-            f"(todo es W) -- no se puede recortar."
+            f"(N1/N2/N3/REM) -- no se puede recortar."
         )
 
-    first_sleep = non_wake_idx.min()
-    last_sleep = non_wake_idx.max()
+    first_sleep = sleep_idx.min()
+    last_sleep = sleep_idx.max()
     start = max(0, first_sleep - buffer_epochs)
     end = min(len(dataset.y), last_sleep + buffer_epochs + 1)
 
@@ -379,7 +405,7 @@ def label_to_class_name(label: Union[str, int, np.integer]) -> str:
     """Convierte una etiqueta nueva o antigua al nombre canonico de clase."""
 
     if isinstance(label, str):
-        if label not in CLASS_NAMES:
+        if label not in ALL_CLASS_NAMES:
             raise ValueError(f"Etiqueta desconocida: {label}")
         return label
 
@@ -390,10 +416,14 @@ def label_to_class_name(label: Union[str, int, np.integer]) -> str:
 
 
 def class_distribution(dataset: EpochDataset) -> Dict[str, int]:
-    """Conteo de épocas por clase final, en formato legible."""
+    """
+    Conteo de épocas por clase final, en formato legible. Siempre incluye
+    las 5 clases de CLASS_NAMES; M y ? aparecen solo si hay épocas de ellas.
+    """
     counts = {name: 0 for name in CLASS_NAMES}
     for label in dataset.y:
-        counts[label_to_class_name(label)] += 1
+        name = label_to_class_name(label)
+        counts[name] = counts.get(name, 0) + 1
     return counts
 
 
