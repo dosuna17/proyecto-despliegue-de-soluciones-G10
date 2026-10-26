@@ -33,8 +33,8 @@ FREQ_BANDS: Dict[str, Tuple[float, float]] = {
     "delta": (0.5, 4.0),
     "theta": (4.0, 8.0),
     "alpha": (8.0, 13.0),
-    "sigma": (11.0, 16.0), 
-    "beta": (14.0, 30.0),
+    "sigma": (12.0, 16.0), 
+    "beta": (13.0, 30.0),
 }
 
 # Rango total sobre el que se calcula la potencia de referencia (relativa, SEF, entropía)
