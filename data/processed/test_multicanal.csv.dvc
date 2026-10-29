@@ -1,0 +1,5 @@
+outs:
+- md5: 43024322443fd0b107b11462119ccc5a
+  size: 104851933
+  hash: md5
+  path: test_multicanal.csv
