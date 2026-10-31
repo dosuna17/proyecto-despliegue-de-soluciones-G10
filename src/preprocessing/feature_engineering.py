@@ -2,18 +2,10 @@
 Extracción de features espectrales por época a partir de un EpochDataset
 (la señal cruda producida por segmentation.py).
 
-Objetivo del proyecto: comparar modelos tabulares (Random Forest, XGBoost,
-SVM, etc.) contra redes neuronales que reciben la señal cruda. Este módulo
-alimenta la rama "tabular" -- la rama "red neuronal" sigue usando
-directamente `EpochDataset.X` de segmentation.py, sin pasar por aquí.
-
-Ambas ramas comparten el mismo `y`, `recording_ids` y `subject_codes`,
-para que el split por sujeto sea idéntico y la comparación sea justa.
-
 Features calculadas por canal, usando el método de Welch para estimar
 la densidad espectral de potencia (PSD) de cada época de 30s:
     - Potencia absoluta y relativa en 5 bandas clásicas de EEG:
-      delta, theta, alpha, sigma (spindle), beta.
+      delta, theta, alpha, sigma, beta.
     - Razones entre bandas (delta/alpha, theta/alpha).
     - Spectral Edge Frequency al 95% (SEF95).
     - Entropía espectral (Shannon, normalizada).
@@ -41,7 +33,7 @@ FREQ_BANDS: Dict[str, Tuple[float, float]] = {
     "delta": (0.5, 4.0),
     "theta": (4.0, 8.0),
     "alpha": (8.0, 13.0),
-    "sigma": (12.0, 16.0),   # banda de husos de sueño (spindles), se solapa con alpha/beta a propósito
+    "sigma": (12.0, 16.0), 
     "beta": (13.0, 30.0),
 }
 
