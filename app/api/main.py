@@ -21,15 +21,21 @@ from src.data.segmentation import CLASS_NAMES, EpochDataset
 from src.preprocessing.feature_engineering import extract_features
 from src.sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig
 from src.config import MLFLOW_TRACKING_URI
+from src.utils.mlflow_runs import load_model_registry, resolve_latest_model_artifact
 
 SAMPLE_RATE_HZ = 100
 EPOCH_SECONDS = 30
 SAMPLES_PER_EPOCH = SAMPLE_RATE_HZ * EPOCH_SECONDS
 SEQUENCE_LENGTH = 15
-MLFLOW_ARTIFACT_PATH = os.getenv("MLFLOW_ARTIFACT_PATH", "tinysleepnet_final_eeg_eog.pth")
+DL_SIGNAL_CHANNELS = ("EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal")
+DL_PRESENCE_CHANNELS = tuple(f"presence {name}" for name in DL_SIGNAL_CHANNELS)
+DL_CHANNEL_NAMES = DL_SIGNAL_CHANNELS + DL_PRESENCE_CHANNELS
+DL_INPUT_CHANNELS = len(DL_CHANNEL_NAMES)
+MLFLOW_ARTIFACT_PATH = os.getenv("MLFLOW_ARTIFACT_PATH", "flexible_final.pth")
 XGBOOST_ARTIFACT_PATH = os.getenv(
-    "XGBOOST_ARTIFACT_PATH", "best-xgboost-multicanal.joblib"
+    "XGBOOST_ARTIFACT_PATH", "files/best-xgboost-multicanal.joblib"
 )
+MODEL_REGISTRY = load_model_registry()
 
 app = FastAPI(title="Sleep Stage Classification API", version="0.3.0")
 
@@ -37,8 +43,10 @@ app = FastAPI(title="Sleep Stage Classification API", version="0.3.0")
 class PredictionRequest(BaseModel):
     """Quince épocas contiguas de EEG Fpz-Cz expresadas en microvoltios."""
 
-    channel: Literal["EEG Fpz-Cz"] = "EEG Fpz-Cz"
-    channel_names: List[str] = Field(default_factory=lambda: ["EEG Fpz-Cz"])
+    channel_names: List[str] = Field(
+        default_factory=lambda: list(DL_CHANNEL_NAMES),
+        description="Canales en el orden fijo de TinySleepNet.",
+    )
     sampling_rate_hz: Literal[100] = SAMPLE_RATE_HZ
     signal_unit: Literal["uV"] = "uV"
     model_artifact: str = Field(
@@ -75,7 +83,7 @@ class PredictionRequest(BaseModel):
                 raise ValueError(f"Se requieren exactamente {SEQUENCE_LENGTH} épocas.")
             if len(epochs[0]) != SAMPLES_PER_EPOCH:
                 raise ValueError(f"Cada época debe contener {SAMPLES_PER_EPOCH} muestras.")
-            n_channels = 1
+            raise ValueError("TinySleepNet requiere epochs con forma (15, 6, 3000).")
         elif first_epoch.ndim == 2:
             n_channels = first_epoch.shape[0]
             if n_channels == 0 or first_epoch.shape[1] != SAMPLES_PER_EPOCH:
@@ -86,6 +94,8 @@ class PredictionRequest(BaseModel):
             array = np.asarray(epoch)
             if array.shape != first_epoch.shape or not np.isfinite(array).all():
                 raise ValueError(f"La época {index} tiene una forma inválida o muestras no finitas.")
+        if first_epoch.ndim == 2 and first_epoch.shape[0] != DL_INPUT_CHANNELS:
+            raise ValueError(f"TinySleepNet requiere exactamente {DL_INPUT_CHANNELS} canales.")
         return epochs
 
 
@@ -181,6 +191,18 @@ def find_run_id_for_artifact(client: MlflowClient, artifact_path: str) -> str:
     )
 
 
+def configured_model_reference(client: MlflowClient, artifact_path: str) -> dict[str, str]:
+    """Resuelve el run configurado para una ruta de artefacto de modelo."""
+
+    for model_config in MODEL_REGISTRY["models"].values():
+        if model_config.get("artifact_name") == artifact_path:
+            return resolve_latest_model_artifact(client, model_config)
+
+    raise KeyError(
+        f"El artefacto '{artifact_path}' no está configurado en el registro de modelos."
+    )
+
+
 def model_path(artifact_path: str) -> Path:
     """Descarga un artefacto y resuelve su run por nombre."""
 
@@ -189,10 +211,10 @@ def model_path(artifact_path: str) -> Path:
         return local_path
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    run_id = find_run_id_for_artifact(MlflowClient(), artifact_path)
+    reference = configured_model_reference(MlflowClient(), artifact_path)
     downloaded_path = mlflow.artifacts.download_artifacts(
-        run_id=run_id,
-        artifact_path=artifact_path,
+        run_id=reference["run_id"],
+        artifact_path=reference["artifact_path"],
     )
     return Path(downloaded_path)
 
@@ -266,10 +288,33 @@ def predict(request: PredictionRequest) -> PredictionResponse:
     """Clasifica las 15 épocas recibidas con el checkpoint seleccionado."""
 
     # (épocas, muestras) -> (lote=1, secuencia=15, canal=1, muestras=3000)
+    if request.channel_names != list(DL_CHANNEL_NAMES):
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "channel_names debe respetar el orden fijo de TinySleepNet.",
+                    "expected": list(DL_CHANNEL_NAMES)},
+        )
     signal_array = np.asarray(request.epochs, dtype=np.float32)
-    input_channels = 1 if signal_array.ndim == 2 else signal_array.shape[1]
+    input_channels = signal_array.shape[1]
     if len(request.channel_names) != input_channels:
         raise HTTPException(status_code=422, detail="channel_names no coincide con los canales de epochs.")
+    presence = signal_array[:, 3:6, :]
+    if not np.all(np.isin(presence, (0.0, 1.0))):
+        raise HTTPException(status_code=422, detail="Las marcas de presencia deben ser 0 o 1.")
+    if not np.all(presence == presence[:, :, :1]):
+        raise HTTPException(
+            status_code=422,
+            detail="Cada marca de presencia debe mantenerse constante en la secuencia.",
+        )
+    for signal_index in range(3):
+        missing = presence[:, signal_index, 0] == 0.0
+        if np.any(missing) and not np.all(signal_array[missing, signal_index, :] == 0.0):
+            raise HTTPException(
+                status_code=422,
+                detail="Una señal marcada como ausente debe enviarse completamente en ceros.",
+            )
+    if not np.any(presence[:, :2, 0] == 1.0):
+        raise HTTPException(status_code=422, detail="Debe llegar al menos un EEG.")
     try:
         model = load_model(str(model_path(request.model_artifact)), input_channels)
     except Exception as error:
@@ -294,10 +339,31 @@ def predict(request: PredictionRequest) -> PredictionResponse:
     ]
     return PredictionResponse(
         model_name=request.model_artifact,
-        channel=request.channel,
+        channel="TinySleepNet-6-canales",
         sampling_rate_hz=request.sampling_rate_hz,
         predictions=predictions,
     )
+
+
+@app.post("/predict-demo", response_model=PredictionResponse)
+def predict_demo() -> PredictionResponse:
+    """Ejecuta una inferencia sintética sin enviar 90.000 valores a Swagger."""
+
+    demo_epochs = np.zeros(
+        (SEQUENCE_LENGTH, DL_INPUT_CHANNELS, SAMPLES_PER_EPOCH),
+        dtype=np.float32,
+    )
+    # Dos EEG presentes; EOG ausente. Las señales ausentes permanecen en cero.
+    demo_epochs[:, 3, :] = 1.0
+    demo_epochs[:, 4, :] = 1.0
+    request = PredictionRequest(
+        channel_names=list(DL_CHANNEL_NAMES),
+        sampling_rate_hz=SAMPLE_RATE_HZ,
+        signal_unit="uV",
+        model_artifact=MLFLOW_ARTIFACT_PATH,
+        epochs=demo_epochs.tolist(),
+    )
+    return predict(request)
 
 
 @app.post("/predict-xgboost", response_model=XGBoostPredictionResponse)
