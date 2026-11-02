@@ -65,12 +65,19 @@ def resolve_latest_model_artifact(
             f"No existe el experiment de MLflow '{experiment_name}'."
         )
 
+    # Filtrar por nombre en MLflow evita descargar y recorrer todos los runs del
+    # experimento. La búsqueda anterior podía hacer cientos de llamadas a
+    # list_artifacts y dejaba la petición de inferencia esperando varios minutos.
+    escaped_run_name = run_name.replace("'", "\\'")
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id],
-        filter_string="attributes.status = 'FINISHED'",
+        filter_string=(
+            "attributes.status = 'FINISHED' "
+            f"and tags.mlflow.runName = '{escaped_run_name}'"
+        ),
         run_view_type=ViewType.ALL,
         order_by=["attributes.start_time DESC"],
-        max_results=50_000,
+        max_results=100,
     )
     runs = sorted(
         runs,
@@ -79,14 +86,15 @@ def resolve_latest_model_artifact(
     )
 
     for run in runs:
-        current_run_name = run.data.tags.get("mlflow.runName", "")
-        if current_run_name != run_name:
-            continue
-
-        artifact_paths = list_artifacts_recursive(client, run.info.run_id)
-        if artifact_name in artifact_paths:
+        # El artefacto se conoce por ruta exacta. Listar solo su carpeta evita
+        # la exploración recursiva de todo el árbol de artefactos del run.
+        parent = Path(artifact_name).parent.as_posix()
+        parent = "" if parent == "." else parent
+        run_id = run.info.run_id
+        artifact_paths = client.list_artifacts(run_id, parent)
+        if any(not item.is_dir and item.path == artifact_name for item in artifact_paths):
             return {
-                "run_id": run.info.run_id,
+                "run_id": run_id,
                 "artifact_path": artifact_name,
             }
 

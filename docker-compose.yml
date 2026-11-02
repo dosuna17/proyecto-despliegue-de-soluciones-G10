@@ -10,6 +10,8 @@ services:
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:?Define MLFLOW_TRACKING_URI en .env}
       MLFLOW_TRACKING_USERNAME: ${MLFLOW_TRACKING_USERNAME}
       MLFLOW_TRACKING_PASSWORD: ${MLFLOW_TRACKING_PASSWORD}
+      # Evita que una caída de MLflow bloquee una inferencia durante minutos.
+      MLFLOW_HTTP_REQUEST_TIMEOUT: ${MLFLOW_HTTP_REQUEST_TIMEOUT:-15}
       MLFLOW_ARTIFACT_PATH: flexible_final.pth
       XGBOOST_ARTIFACT_PATH: files/best-xgboost-multicanal.joblib
       MODEL_PATH: ${MODEL_PATH:-}
