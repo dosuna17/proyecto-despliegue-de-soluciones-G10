@@ -60,7 +60,7 @@ BATCH_SIZE = 15
 MODELOS_DISPONIBLES = {
     "baseline": {
         "etiqueta": "XGBoost (línea base)",
-        "canales_requeridos": ["EEG Fpz-Cz", "EEG Pz-Oz"],
+        "canales_requeridos": ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"],
         "model_artifact": "files/best-xgboost-multicanal.joblib",
     },
     "avanzado": {

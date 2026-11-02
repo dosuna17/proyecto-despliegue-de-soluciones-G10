@@ -31,6 +31,7 @@ DL_SIGNAL_CHANNELS = ("EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal")
 DL_PRESENCE_CHANNELS = tuple(f"presence {name}" for name in DL_SIGNAL_CHANNELS)
 DL_CHANNEL_NAMES = DL_SIGNAL_CHANNELS + DL_PRESENCE_CHANNELS
 DL_INPUT_CHANNELS = len(DL_CHANNEL_NAMES)
+XGBOOST_REQUIRED_CHANNELS = ("EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal")
 MLFLOW_ARTIFACT_PATH = os.getenv("MLFLOW_ARTIFACT_PATH", "flexible_final.pth")
 XGBOOST_ARTIFACT_PATH = os.getenv(
     "XGBOOST_ARTIFACT_PATH", "files/best-xgboost-multicanal.joblib"
@@ -353,20 +354,44 @@ def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionRespo
             status_code=422,
             detail="channel_names debe tener la misma cantidad de canales que epochs.",
         )
+    if (
+        len(request.channel_names) != len(XGBOOST_REQUIRED_CHANNELS)
+        or set(request.channel_names) != set(XGBOOST_REQUIRED_CHANNELS)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "XGBoost requiere exactamente las tres señales configuradas.",
+                "expected": list(XGBOOST_REQUIRED_CHANNELS),
+            },
+        )
 
     try:
         artifact = load_xgboost_artifact(request.model_artifact)
         raw_epochs = np.asarray(request.epochs, dtype=np.float32)
-        n_epochs, n_channels, _ = raw_epochs.shape
+        present_indices = [
+            index
+            for index in range(raw_epochs.shape[1])
+            if np.any(raw_epochs[:, index, :] != 0.0)
+        ]
+        present_channels = [request.channel_names[index] for index in present_indices]
+        if not any(name in present_channels for name in XGBOOST_REQUIRED_CHANNELS[:2]):
+            raise HTTPException(
+                status_code=422,
+                detail="XGBoost requiere al menos una señal EEG no vacía.",
+            )
+
+        present_epochs = raw_epochs[:, present_indices, :]
+        n_epochs, n_channels, _ = present_epochs.shape
         dataset = EpochDataset(
             recording_id="api-request",
             subject_code="api-request",
             night="0",
-            X=raw_epochs,
+            X=present_epochs,
             y=np.full(n_epochs, "W", dtype=str),
             recording_ids=np.full(n_epochs, "api-request", dtype=object),
             subject_codes=np.full(n_epochs, "api-request", dtype=object),
-            channel_names=request.channel_names,
+            channel_names=present_channels,
             sfreq=request.sampling_rate_hz,
             signal_unit=request.signal_unit,
             dropped_epochs=0,
@@ -378,21 +403,18 @@ def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionRespo
         )
         channel_flags = {
             "channel_count": n_channels,
-            "has_eeg_pz_oz": int(any("pz-oz" in channel.lower() for channel in request.channel_names)),
-            "has_eog_horizontal": int(any("eog" in channel.lower() for channel in request.channel_names)),
-            "channel_combo_eeg_fpz_cz": int(any("fpz-cz" in channel.lower() for channel in request.channel_names)),
+            "has_eeg_fpz_cz": int("EEG Fpz-Cz" in present_channels),
+            "has_eeg_pz_oz": int("EEG Pz-Oz" in present_channels),
+            "has_eog_horizontal": int("EOG horizontal" in present_channels),
+            "channel_combo_eeg_fpz_cz": int("EEG Fpz-Cz" in present_channels),
             "channel_combo_eeg_fpz_cz__eeg_pz_oz": int(
-                any("fpz-cz" in channel.lower() for channel in request.channel_names)
-                and any("pz-oz" in channel.lower() for channel in request.channel_names)
+                "EEG Fpz-Cz" in present_channels and "EEG Pz-Oz" in present_channels
             ),
             "channel_combo_eeg_fpz_cz__eeg_pz_oz__eog_horizontal": int(
-                any("fpz-cz" in channel.lower() for channel in request.channel_names)
-                and any("pz-oz" in channel.lower() for channel in request.channel_names)
-                and any("eog" in channel.lower() for channel in request.channel_names)
+                all(name in present_channels for name in XGBOOST_REQUIRED_CHANNELS)
             ),
             "channel_combo_eeg_fpz_cz__eog_horizontal": int(
-                any("fpz-cz" in channel.lower() for channel in request.channel_names)
-                and any("eog" in channel.lower() for channel in request.channel_names)
+                "EEG Fpz-Cz" in present_channels and "EOG horizontal" in present_channels
             ),
         }
         for column, value in channel_flags.items():
@@ -424,6 +446,8 @@ def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionRespo
             probability_labels = np.asarray(class_labels)[model_classes]
         else:
             probability_labels = np.asarray(class_labels)
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(
             status_code=503,
