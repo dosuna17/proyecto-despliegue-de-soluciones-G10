@@ -1,0 +1,27 @@
+# Identificadores estables usados para resolver dinámicamente el último modelo
+# publicado en MLflow. El run_id no se guarda aquí: se obtiene en runtime.
+models:
+  lightgbm:
+    experiment_name: sleep-staging-baseline-multicanal
+    run_name: lightgbm_multicanal
+    artifact_name: files/best-lightgbm-multicanal.joblib
+
+  random_forest:
+    experiment_name: sleep-staging-baseline-multicanal
+    run_name: random-forest_multicanal
+    artifact_name: null
+
+  decision_tree:
+    experiment_name: sleep-staging-baseline-multicanal
+    run_name: decision-tree_multicanal
+    artifact_name: files/best-decision-tree-multicanal.joblib
+
+  xgboost:
+    experiment_name: sleep-staging-baseline-multicanal
+    run_name: xgboost_multicanal
+    artifact_name: files/best-xgboost-multicanal.joblib
+
+  tinysleepnet:
+    experiment_name: sleep-staging-advanced
+    run_name: tinysleepnet_final_flexible
+    artifact_name: flexible_final.pth

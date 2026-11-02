@@ -5,6 +5,7 @@ import torch
 from fastapi.testclient import TestClient
 
 from app.api.main import app, find_run_id_for_artifact, load_model
+from src.utils.mlflow_runs import resolve_latest_model_artifact
 from src.sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig
 
 from sklearn.preprocessing import LabelEncoder
@@ -77,6 +78,42 @@ def test_find_run_id_for_artifact_returns_latest_matching_run() -> None:
     result = find_run_id_for_artifact(client, "tinysleepnet_final_eeg_eog.pth.pth")
 
     assert result == "newest-run"
+
+
+def test_resolve_latest_model_artifact_uses_run_name_and_artifact() -> None:
+    model_artifact = SimpleNamespace(
+        is_dir=False,
+        path="models/model.pth",
+    )
+    newest_without_artifact = SimpleNamespace(
+        info=SimpleNamespace(run_id="newest-without-artifact", start_time=3),
+        data=SimpleNamespace(tags={"mlflow.runName": "model-run"}),
+    )
+    older_with_artifact = SimpleNamespace(
+        info=SimpleNamespace(run_id="older-with-artifact", start_time=2),
+        data=SimpleNamespace(tags={"mlflow.runName": "model-run"}),
+    )
+    client = SimpleNamespace(
+        get_experiment_by_name=lambda name: SimpleNamespace(experiment_id="7"),
+        search_runs=lambda **kwargs: [newest_without_artifact, older_with_artifact],
+        list_artifacts=lambda run_id, path="": (
+            [model_artifact] if run_id == "older-with-artifact" else []
+        ),
+    )
+
+    result = resolve_latest_model_artifact(
+        client,
+        {
+            "experiment_name": "sleep-staging-advanced",
+            "run_name": "model-run",
+            "artifact_name": "models/model.pth",
+        },
+    )
+
+    assert result == {
+        "run_id": "older-with-artifact",
+        "artifact_path": "models/model.pth",
+    }
 
 
 def test_predict_reports_a_missing_model(monkeypatch) -> None:
