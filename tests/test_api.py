@@ -27,7 +27,7 @@ def test_predict_returns_a_prediction_for_each_epoch(tmp_path, monkeypatch) -> N
     monkeypatch.setenv("MODEL_PATH", str(checkpoint))
     load_model.cache_clear()
 
-    response = TestClient(app).post("/predict", json=_payload())
+    response = TestClient(app).post("/predict-tinysleepnet", json=_payload())
 
     assert response.status_code == 200
     body = response.json()
@@ -40,7 +40,7 @@ def test_predict_rejects_an_invalid_epoch_count() -> None:
     payload = _payload()
     payload["epochs"] = payload["epochs"][:14]
 
-    response = TestClient(app).post("/predict", json=payload)
+    response = TestClient(app).post("/predict-tinysleepnet", json=payload)
 
     assert response.status_code == 422
 
@@ -49,7 +49,7 @@ def test_predict_rejects_an_invalid_model_artifact_path() -> None:
     payload = _payload()
     payload["model_artifact"] = "../other-model.pth"
 
-    response = TestClient(app).post("/predict", json=payload)
+    response = TestClient(app).post("/predict-tinysleepnet", json=payload)
 
     assert response.status_code == 422
 
@@ -120,7 +120,7 @@ def test_predict_reports_a_missing_model(monkeypatch) -> None:
     monkeypatch.setenv("MODEL_PATH", "/does/not/exist.pth")
     load_model.cache_clear()
 
-    response = TestClient(app).post("/predict", json=_payload())
+    response = TestClient(app).post("/predict-tinysleepnet", json=_payload())
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "model_unavailable"

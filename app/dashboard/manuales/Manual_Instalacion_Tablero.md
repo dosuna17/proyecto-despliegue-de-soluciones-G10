@@ -86,7 +86,7 @@ Esto construye las imágenes de los dos servicios definidos en `docker-compose.y
 
 | Servicio | Puerto | Función |
 |---|---|---|
-| `api` | `8000` | API REST (FastAPI) que expone `/health`, `/predict` (TinySleepNet) y `/predict-xgboost` |
+| `api` | `8000` | API REST (FastAPI) que expone `/health`, `/predict-tinysleepnet` (TinySleepNet) y `/predict-xgboost` |
 | `dashboard` | `8501` | Tablero (Streamlit) que consume la API |
 
 El servicio `dashboard` espera a que `api` reporte estar saludable (`condition: service_healthy`) antes de arrancar, así que es normal ver primero los logs de `api` y luego los de `dashboard`.

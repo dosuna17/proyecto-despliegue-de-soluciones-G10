@@ -43,7 +43,7 @@ if DATA_ROOT is None:
 #   $env:SLEEP_STAGING_API_URL = "http://<ip-ec2>:8000"
 API_BASE_URL = os.getenv("SLEEP_STAGING_API_URL", "http://localhost:8000")
 
-# /predict (TinySleepNet) exige exactamente este número de épocas por llamada.
+# /predict-tinysleepnet exige exactamente este número de épocas por llamada.
 BATCH_SIZE = 15
 
 #-------------------------------------------------------------------------------------------------------------------
@@ -238,14 +238,14 @@ def _llamar_api(endpoint, payload, timeout):
         ) from error
 
 
-# Llama a /predict en bloques de exactamente 15 épocas (TinySleepNet).
+# Llama a /predict-tinysleepnet en bloques de exactamente 15 épocas (TinySleepNet).
 def _predecir_avanzado(dataset):
     n_epocas = len(dataset.y)
     n_epocas_usables = (n_epocas // BATCH_SIZE) * BATCH_SIZE
     if n_epocas_usables == 0:
         raise ValueError(
             f"El estudio tiene {n_epocas} épocas, menos que el bloque mínimo "
-            f"de {BATCH_SIZE} que exige /predict."
+            f"de {BATCH_SIZE} que exige /predict-tinysleepnet."
         )
 
     resultados = []
@@ -258,7 +258,7 @@ def _predecir_avanzado(dataset):
             "model_artifact": MODELOS_DISPONIBLES["avanzado"]["model_artifact"],
             "epochs": bloque.tolist(),
         }
-        cuerpo = _llamar_api("/predict", payload, timeout=30)
+        cuerpo = _llamar_api("/predict-tinysleepnet", payload, timeout=30)
         for i, pred in enumerate(cuerpo["predictions"]):
             resultados.append({
                 "prediccion": pred["predicted_stage"],

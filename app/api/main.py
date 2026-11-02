@@ -283,7 +283,7 @@ def health() -> dict:
     }
 
 
-@app.post("/predict", response_model=PredictionResponse)
+@app.post("/predict-tinysleepnet", response_model=PredictionResponse)
 def predict(request: PredictionRequest) -> PredictionResponse:
     """Clasifica las 15 épocas recibidas con el checkpoint seleccionado."""
 
@@ -343,28 +343,6 @@ def predict(request: PredictionRequest) -> PredictionResponse:
         sampling_rate_hz=request.sampling_rate_hz,
         predictions=predictions,
     )
-
-
-@app.post("/predict-demo", response_model=PredictionResponse)
-def predict_demo() -> PredictionResponse:
-    """Ejecuta una inferencia sintética sin enviar 90.000 valores a Swagger."""
-
-    demo_epochs = np.zeros(
-        (SEQUENCE_LENGTH, DL_INPUT_CHANNELS, SAMPLES_PER_EPOCH),
-        dtype=np.float32,
-    )
-    # Dos EEG presentes; EOG ausente. Las señales ausentes permanecen en cero.
-    demo_epochs[:, 3, :] = 1.0
-    demo_epochs[:, 4, :] = 1.0
-    request = PredictionRequest(
-        channel_names=list(DL_CHANNEL_NAMES),
-        sampling_rate_hz=SAMPLE_RATE_HZ,
-        signal_unit="uV",
-        model_artifact=MLFLOW_ARTIFACT_PATH,
-        epochs=demo_epochs.tolist(),
-    )
-    return predict(request)
-
 
 @app.post("/predict-xgboost", response_model=XGBoostPredictionResponse)
 def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionResponse:
