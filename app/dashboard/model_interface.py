@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
 import requests
 
 # app/dashboard/model_interface.py -> parents[2] = raíz del repo.
@@ -60,12 +61,13 @@ MODELOS_DISPONIBLES = {
     "baseline": {
         "etiqueta": "XGBoost (línea base)",
         "canales_requeridos": ["EEG Fpz-Cz", "EEG Pz-Oz"],
-        "model_artifact": "best-xgboost-multicanal.joblib",
+        "model_artifact": "files/best-xgboost-multicanal.joblib",
     },
     "avanzado": {
         "etiqueta": "TinySleepNet",
-        "canales_requeridos": ["EEG Fpz-Cz", "EOG horizontal"],
-        "model_artifact": "tinysleepnet_final_eeg_eog.pth",
+        "canales_requeridos": ["EEG Fpz-Cz"],
+        "canales_entrada": ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"],
+        "model_artifact": "flexible_final.pth",
     },  # <- se habilita cuando el cnn.py de Gabriel llegue a main
 }
 
@@ -107,6 +109,37 @@ def subset_canales(dataset, canales_requeridos):
         recording_ids=dataset.recording_ids,
         subject_codes=dataset.subject_codes,
         channel_names=canales_requeridos,
+        sfreq=dataset.sfreq,
+        signal_unit=dataset.signal_unit,
+        dropped_epochs=dataset.dropped_epochs,
+    )
+
+
+def preparar_entrada_tinysleepnet(dataset):
+    """Construye 3 señales físicas y 3 marcas de presencia en orden fijo."""
+    signal_channels = ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]
+    presence_channels = [f"presence {name}" for name in signal_channels]
+    n_epochs, _, n_samples = dataset.X.shape
+    signals, presence = [], []
+    for channel_name in signal_channels:
+        if channel_name in dataset.channel_names:
+            signals.append(dataset.X[:, dataset.channel_names.index(channel_name), :])
+            presence.append(np.ones((n_epochs, n_samples), dtype=np.float32))
+        else:
+            signals.append(np.zeros((n_epochs, n_samples), dtype=np.float32))
+            presence.append(np.zeros((n_epochs, n_samples), dtype=np.float32))
+    X = np.stack([*signals, *presence], axis=1).astype(np.float32, copy=False)
+    if not np.any(X[:, 3:5, 0] == 1.0):
+        raise ValueError("TinySleepNet requiere al menos un canal EEG.")
+    return EpochDataset(
+        recording_id=dataset.recording_id,
+        subject_code=dataset.subject_code,
+        night=dataset.night,
+        X=X,
+        y=dataset.y,
+        recording_ids=dataset.recording_ids,
+        subject_codes=dataset.subject_codes,
+        channel_names=signal_channels + presence_channels,
         sfreq=dataset.sfreq,
         signal_unit=dataset.signal_unit,
         dropped_epochs=dataset.dropped_epochs,
@@ -222,6 +255,7 @@ def _predecir_avanzado(dataset):
             "channel_names": dataset.channel_names,
             "sampling_rate_hz": int(dataset.sfreq),
             "signal_unit": dataset.signal_unit,
+            "model_artifact": MODELOS_DISPONIBLES["avanzado"]["model_artifact"],
             "epochs": bloque.tolist(),
         }
         cuerpo = _llamar_api("/predict", payload, timeout=30)
@@ -243,6 +277,7 @@ def _predecir_baseline(dataset):
         "channel_names": dataset.channel_names,
         "sampling_rate_hz": int(dataset.sfreq),
         "signal_unit": dataset.signal_unit,
+        "model_artifact": MODELOS_DISPONIBLES["baseline"]["model_artifact"],
         "epochs": dataset.X.tolist(),
     }
     cuerpo = _llamar_api("/predict-xgboost", payload, timeout=180)
