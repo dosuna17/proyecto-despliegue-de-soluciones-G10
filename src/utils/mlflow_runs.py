@@ -47,11 +47,11 @@ def list_artifacts_recursive(
 
 def resolve_latest_model_artifact(
     client: MlflowClient,
-    model_config: Mapping[str, str],
+    model_config: Mapping[str, Any],
 ) -> dict[str, str]:
-    """Resuelve el último run FINISHED con el artefacto configurado.
+    """Resuelve el último run FINISHED que cumple los criterios configurados.
 
-    La búsqueda queda limitada al experiment y al nombre de run configurados.
+    La búsqueda queda limitada al experiment, nombre de run y tags requeridos.
     El resultado contiene el run_id y la ruta exacta del artefacto.
     """
 
@@ -65,16 +65,19 @@ def resolve_latest_model_artifact(
             f"No existe el experiment de MLflow '{experiment_name}'."
         )
 
-    # Filtrar por nombre en MLflow evita descargar y recorrer todos los runs del
-    # experimento. La búsqueda anterior podía hacer cientos de llamadas a
-    # list_artifacts y dejaba la petición de inferencia esperando varios minutos.
+    # Filtrar en MLflow evita recorrer todos los runs y artefactos del experimento.
     escaped_run_name = run_name.replace("'", "\\'")
+    filters = [
+        "attributes.status = 'FINISHED'",
+        f"tags.mlflow.runName = '{escaped_run_name}'",
+    ]
+    for tag_name, tag_value in model_config.get("required_tags", {}).items():
+        escaped_tag_value = str(tag_value).replace("'", "\\'")
+        filters.append(f"tags.{tag_name} = '{escaped_tag_value}'")
+
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id],
-        filter_string=(
-            "attributes.status = 'FINISHED' "
-            f"and tags.mlflow.runName = '{escaped_run_name}'"
-        ),
+        filter_string=" and ".join(filters),
         run_view_type=ViewType.ALL,
         order_by=["attributes.start_time DESC"],
         max_results=100,

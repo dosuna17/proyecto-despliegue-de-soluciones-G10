@@ -23,5 +23,7 @@ models:
 
   tinysleepnet:
     experiment_name: sleep-staging-advanced
-    run_name: tinysleepnet_final_flexible
-    artifact_name: flexible_final.pth
+    run_name: tinysleepnet_flexible_cv
+    artifact_name: modelo_final/flexible_final.pth
+    required_tags:
+      champion: "true"

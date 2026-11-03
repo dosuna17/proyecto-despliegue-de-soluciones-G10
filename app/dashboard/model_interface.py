@@ -67,7 +67,7 @@ MODELOS_DISPONIBLES = {
         "etiqueta": "TinySleepNet",
         "canales_requeridos": ["EEG Fpz-Cz"],
         "canales_entrada": ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"],
-        "model_artifact": "flexible_final.pth",
+        "model_artifact": "modelo_final/flexible_final.pth",
     },  # <- se habilita cuando el cnn.py de Gabriel llegue a main
 }
 

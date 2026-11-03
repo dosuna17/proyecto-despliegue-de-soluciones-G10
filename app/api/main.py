@@ -32,7 +32,14 @@ DL_PRESENCE_CHANNELS = tuple(f"presence {name}" for name in DL_SIGNAL_CHANNELS)
 DL_CHANNEL_NAMES = DL_SIGNAL_CHANNELS + DL_PRESENCE_CHANNELS
 DL_INPUT_CHANNELS = len(DL_CHANNEL_NAMES)
 XGBOOST_REQUIRED_CHANNELS = ("EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal")
-MLFLOW_ARTIFACT_PATH = os.getenv("MLFLOW_ARTIFACT_PATH", "flexible_final.pth")
+XGBOOST_CHANNEL_SLUGS = {
+    "EEG Fpz-Cz": "eeg_fpz_cz",
+    "EEG Pz-Oz": "eeg_pz_oz",
+    "EOG horizontal": "eog_horizontal",
+}
+MLFLOW_ARTIFACT_PATH = os.getenv(
+    "MLFLOW_ARTIFACT_PATH", "modelo_final/flexible_final.pth"
+)
 XGBOOST_ARTIFACT_PATH = os.getenv(
     "XGBOOST_ARTIFACT_PATH", "files/best-xgboost-multicanal.joblib"
 )
@@ -401,25 +408,31 @@ def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionRespo
             feature_dataset.X,
             columns=feature_dataset.feature_names,
         )
+        feature_columns = artifact["feature_columns"]
+        combo = "__".join(
+            XGBOOST_CHANNEL_SLUGS[channel]
+            for channel in XGBOOST_REQUIRED_CHANNELS
+            if channel in present_channels
+        )
+        combo_column = f"channel_combo_{combo}"
+        if combo_column not in feature_columns:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Combinación no soportada por el modelo: {combo}",
+            )
+
         channel_flags = {
             "channel_count": n_channels,
-            "has_eeg_fpz_cz": int("EEG Fpz-Cz" in present_channels),
-            "has_eeg_pz_oz": int("EEG Pz-Oz" in present_channels),
-            "has_eog_horizontal": int("EOG horizontal" in present_channels),
-            "channel_combo_eeg_fpz_cz": int("EEG Fpz-Cz" in present_channels),
-            "channel_combo_eeg_fpz_cz__eeg_pz_oz": int(
-                "EEG Fpz-Cz" in present_channels and "EEG Pz-Oz" in present_channels
-            ),
-            "channel_combo_eeg_fpz_cz__eeg_pz_oz__eog_horizontal": int(
-                all(name in present_channels for name in XGBOOST_REQUIRED_CHANNELS)
-            ),
-            "channel_combo_eeg_fpz_cz__eog_horizontal": int(
-                "EEG Fpz-Cz" in present_channels and "EOG horizontal" in present_channels
-            ),
+            **{
+                f"has_{slug}": int(channel in present_channels)
+                for channel, slug in XGBOOST_CHANNEL_SLUGS.items()
+            },
         }
         for column, value in channel_flags.items():
             feature_frame[column] = value
-        feature_columns = artifact["feature_columns"]
+        for column in feature_columns:
+            if column.startswith("channel_combo_"):
+                feature_frame[column] = int(column == combo_column)
         feature_frame = feature_frame.reindex(columns=feature_columns, fill_value=0.0)
         model = artifact["model"]
         encoded = model.predict(feature_frame)
