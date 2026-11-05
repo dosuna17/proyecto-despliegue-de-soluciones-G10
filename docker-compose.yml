@@ -8,8 +8,12 @@ services:
       - "8000:8000"
     environment:
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:?Define MLFLOW_TRACKING_URI en .env}
-      MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-tinysleepnet_final_eeg_eog.pth}
-      XGBOOST_ARTIFACT_PATH: ${XGBOOST_ARTIFACT_PATH:-best-xgboost-multicanal.joblib}
+      MLFLOW_TRACKING_USERNAME: ${MLFLOW_TRACKING_USERNAME}
+      MLFLOW_TRACKING_PASSWORD: ${MLFLOW_TRACKING_PASSWORD}
+      # Evita que una caída de MLflow bloquee una inferencia durante minutos.
+      MLFLOW_HTTP_REQUEST_TIMEOUT: ${MLFLOW_HTTP_REQUEST_TIMEOUT:-15}
+      MLFLOW_ARTIFACT_PATH: modelo_final/flexible_final.pth
+      XGBOOST_ARTIFACT_PATH: files/best-xgboost-multicanal.joblib
       MODEL_PATH: ${MODEL_PATH:-}
     restart: unless-stopped
     healthcheck:

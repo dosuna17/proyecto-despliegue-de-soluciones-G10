@@ -225,14 +225,8 @@ def _elegir_canales():
         value=eog_habilitado, disabled=not eog_habilitado,
     )
 
-    emg_habilitado = "EMG submentoniano" in soportados
-    emg = st.checkbox(
-        "EMG submentoniano · opcional · 1 Hz" + ("" if emg_habilitado else " · sin modelo aún"),
-        value=emg_habilitado, disabled=not emg_habilitado,
-    )
-
     canales = {"EEG Fpz-Cz": eeg_fpz_cz, "EEG Pz-Oz": eeg_pz_oz,
-               "EOG horizontal": eog, "EMG submentoniano": emg}
+               "EOG horizontal": eog}
     canales_activos = [nombre for nombre, activo in canales.items() if activo]
 
     pastillas = "".join(
@@ -378,7 +372,13 @@ def _elegir_modelo_y_predecir(canales_cargados):
 
     if clave_modelo not in st.session_state.resultados_por_modelo:
         with st.spinner(f"Calculando predicciones con {modelo_info['etiqueta']}..."):
-            subconjunto = model.subset_canales(st.session_state.dataset, modelo_info["canales_requeridos"])
+            if clave_modelo == "avanzado":
+                subconjunto = model.preparar_entrada_tinysleepnet(st.session_state.dataset)
+            else:
+                subconjunto = model.subset_canales(
+                    st.session_state.dataset,
+                    modelo_info["canales_requeridos"],
+                )
             try:
                 dataset_usado, resultados = model.predecir_estudio(subconjunto, modelo=clave_modelo)
             except RuntimeError as error:
