@@ -54,6 +54,8 @@ import mlflow.pytorch
 from sklearn.model_selection import GroupShuffleSplit
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))  # para importar src/data, src/models
+sys.path.append(str(Path(__file__).resolve().parents[3]))
+from src.config import MLFLOW_TRACKING_URI  # noqa: E402
 
 from data.dataset import (  # noqa: E402
     build_dataloader,
@@ -293,7 +295,7 @@ def train_one_fold(
 # ---------------------------------------------------------------------
 def run_cv():
     set_seed(CONFIG["seed"])
-    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    tracking_uri = MLFLOW_TRACKING_URI
     if not tracking_uri:
         tracking_uri = f"sqlite:///{LOCAL_TRACKING_DB}"
         print(f"[MODO OFFLINE] MLFLOW_TRACKING_URI no configurada -- "
@@ -428,7 +430,7 @@ def save_confusion_matrix_plot(cm: list, class_names: list, out_path: str) -> No
 
 def run_final():
     set_seed(CONFIG["seed"])
-    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    tracking_uri = MLFLOW_TRACKING_URI
     if not tracking_uri:
         tracking_uri = f"sqlite:///{LOCAL_TRACKING_DB_FINAL}"
         print(f"[MODO OFFLINE] MLFLOW_TRACKING_URI no configurada -- "

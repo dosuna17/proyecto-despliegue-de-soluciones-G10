@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
 import requests
 
 # app/dashboard/model_interface.py -> parents[2] = raíz del repo.
@@ -42,7 +43,7 @@ if DATA_ROOT is None:
 #   $env:SLEEP_STAGING_API_URL = "http://<ip-ec2>:8000"
 API_BASE_URL = os.getenv("SLEEP_STAGING_API_URL", "http://localhost:8000")
 
-# /predict (TinySleepNet) exige exactamente este número de épocas por llamada.
+# /predict-tinysleepnet exige exactamente este número de épocas por llamada.
 BATCH_SIZE = 15
 
 #-------------------------------------------------------------------------------------------------------------------
@@ -59,13 +60,14 @@ BATCH_SIZE = 15
 MODELOS_DISPONIBLES = {
     "baseline": {
         "etiqueta": "XGBoost (línea base)",
-        "canales_requeridos": ["EEG Fpz-Cz", "EEG Pz-Oz"],
-        "model_artifact": "best-xgboost-multicanal.joblib",
+        "canales_requeridos": ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"],
+        "model_artifact": "files/best-xgboost-multicanal.joblib",
     },
     "avanzado": {
         "etiqueta": "TinySleepNet",
-        "canales_requeridos": ["EEG Fpz-Cz", "EOG horizontal"],
-        "model_artifact": "tinysleepnet_final_eeg_eog.pth",
+        "canales_requeridos": ["EEG Fpz-Cz"],
+        "canales_entrada": ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"],
+        "model_artifact": "modelo_final/flexible_final.pth",
     },  # <- se habilita cuando el cnn.py de Gabriel llegue a main
 }
 
@@ -107,6 +109,37 @@ def subset_canales(dataset, canales_requeridos):
         recording_ids=dataset.recording_ids,
         subject_codes=dataset.subject_codes,
         channel_names=canales_requeridos,
+        sfreq=dataset.sfreq,
+        signal_unit=dataset.signal_unit,
+        dropped_epochs=dataset.dropped_epochs,
+    )
+
+
+def preparar_entrada_tinysleepnet(dataset):
+    """Construye 3 señales físicas y 3 marcas de presencia en orden fijo."""
+    signal_channels = ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]
+    presence_channels = [f"presence {name}" for name in signal_channels]
+    n_epochs, _, n_samples = dataset.X.shape
+    signals, presence = [], []
+    for channel_name in signal_channels:
+        if channel_name in dataset.channel_names:
+            signals.append(dataset.X[:, dataset.channel_names.index(channel_name), :])
+            presence.append(np.ones((n_epochs, n_samples), dtype=np.float32))
+        else:
+            signals.append(np.zeros((n_epochs, n_samples), dtype=np.float32))
+            presence.append(np.zeros((n_epochs, n_samples), dtype=np.float32))
+    X = np.stack([*signals, *presence], axis=1).astype(np.float32, copy=False)
+    if not np.any(X[:, 3:5, 0] == 1.0):
+        raise ValueError("TinySleepNet requiere al menos un canal EEG.")
+    return EpochDataset(
+        recording_id=dataset.recording_id,
+        subject_code=dataset.subject_code,
+        night=dataset.night,
+        X=X,
+        y=dataset.y,
+        recording_ids=dataset.recording_ids,
+        subject_codes=dataset.subject_codes,
+        channel_names=signal_channels + presence_channels,
         sfreq=dataset.sfreq,
         signal_unit=dataset.signal_unit,
         dropped_epochs=dataset.dropped_epochs,
@@ -205,14 +238,14 @@ def _llamar_api(endpoint, payload, timeout):
         ) from error
 
 
-# Llama a /predict en bloques de exactamente 15 épocas (TinySleepNet).
+# Llama a /predict-tinysleepnet en bloques de exactamente 15 épocas (TinySleepNet).
 def _predecir_avanzado(dataset):
     n_epocas = len(dataset.y)
     n_epocas_usables = (n_epocas // BATCH_SIZE) * BATCH_SIZE
     if n_epocas_usables == 0:
         raise ValueError(
             f"El estudio tiene {n_epocas} épocas, menos que el bloque mínimo "
-            f"de {BATCH_SIZE} que exige /predict."
+            f"de {BATCH_SIZE} que exige /predict-tinysleepnet."
         )
 
     resultados = []
@@ -222,9 +255,10 @@ def _predecir_avanzado(dataset):
             "channel_names": dataset.channel_names,
             "sampling_rate_hz": int(dataset.sfreq),
             "signal_unit": dataset.signal_unit,
+            "model_artifact": MODELOS_DISPONIBLES["avanzado"]["model_artifact"],
             "epochs": bloque.tolist(),
         }
-        cuerpo = _llamar_api("/predict", payload, timeout=30)
+        cuerpo = _llamar_api("/predict-tinysleepnet", payload, timeout=30)
         for i, pred in enumerate(cuerpo["predictions"]):
             resultados.append({
                 "prediccion": pred["predicted_stage"],
@@ -243,6 +277,7 @@ def _predecir_baseline(dataset):
         "channel_names": dataset.channel_names,
         "sampling_rate_hz": int(dataset.sfreq),
         "signal_unit": dataset.signal_unit,
+        "model_artifact": MODELOS_DISPONIBLES["baseline"]["model_artifact"],
         "epochs": dataset.X.tolist(),
     }
     cuerpo = _llamar_api("/predict-xgboost", payload, timeout=180)

@@ -20,16 +20,30 @@ from pydantic import BaseModel, Field, field_validator
 from src.data.segmentation import CLASS_NAMES, EpochDataset
 from src.preprocessing.feature_engineering import extract_features
 from src.sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig
+from src.config import MLFLOW_TRACKING_URI
+from src.utils.mlflow_runs import load_model_registry, resolve_latest_model_artifact
 
 SAMPLE_RATE_HZ = 100
 EPOCH_SECONDS = 30
 SAMPLES_PER_EPOCH = SAMPLE_RATE_HZ * EPOCH_SECONDS
 SEQUENCE_LENGTH = 15
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "https://18.119.196.100")
-MLFLOW_ARTIFACT_PATH = os.getenv("MLFLOW_ARTIFACT_PATH", "tinysleepnet_final_eeg_eog.pth")
-XGBOOST_ARTIFACT_PATH = os.getenv(
-    "XGBOOST_ARTIFACT_PATH", "best-xgboost-multicanal.joblib"
+DL_SIGNAL_CHANNELS = ("EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal")
+DL_PRESENCE_CHANNELS = tuple(f"presence {name}" for name in DL_SIGNAL_CHANNELS)
+DL_CHANNEL_NAMES = DL_SIGNAL_CHANNELS + DL_PRESENCE_CHANNELS
+DL_INPUT_CHANNELS = len(DL_CHANNEL_NAMES)
+XGBOOST_REQUIRED_CHANNELS = ("EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal")
+XGBOOST_CHANNEL_SLUGS = {
+    "EEG Fpz-Cz": "eeg_fpz_cz",
+    "EEG Pz-Oz": "eeg_pz_oz",
+    "EOG horizontal": "eog_horizontal",
+}
+MLFLOW_ARTIFACT_PATH = os.getenv(
+    "MLFLOW_ARTIFACT_PATH", "modelo_final/flexible_final.pth"
 )
+XGBOOST_ARTIFACT_PATH = os.getenv(
+    "XGBOOST_ARTIFACT_PATH", "files/best-xgboost-multicanal.joblib"
+)
+MODEL_REGISTRY = load_model_registry()
 
 app = FastAPI(title="Sleep Stage Classification API", version="0.3.0")
 
@@ -37,8 +51,10 @@ app = FastAPI(title="Sleep Stage Classification API", version="0.3.0")
 class PredictionRequest(BaseModel):
     """Quince épocas contiguas de EEG Fpz-Cz expresadas en microvoltios."""
 
-    channel: Literal["EEG Fpz-Cz"] = "EEG Fpz-Cz"
-    channel_names: List[str] = Field(default_factory=lambda: ["EEG Fpz-Cz"])
+    channel_names: List[str] = Field(
+        default_factory=lambda: list(DL_CHANNEL_NAMES),
+        description="Canales en el orden fijo de TinySleepNet.",
+    )
     sampling_rate_hz: Literal[100] = SAMPLE_RATE_HZ
     signal_unit: Literal["uV"] = "uV"
     model_artifact: str = Field(
@@ -75,7 +91,7 @@ class PredictionRequest(BaseModel):
                 raise ValueError(f"Se requieren exactamente {SEQUENCE_LENGTH} épocas.")
             if len(epochs[0]) != SAMPLES_PER_EPOCH:
                 raise ValueError(f"Cada época debe contener {SAMPLES_PER_EPOCH} muestras.")
-            n_channels = 1
+            raise ValueError("TinySleepNet requiere epochs con forma (15, 6, 3000).")
         elif first_epoch.ndim == 2:
             n_channels = first_epoch.shape[0]
             if n_channels == 0 or first_epoch.shape[1] != SAMPLES_PER_EPOCH:
@@ -86,6 +102,8 @@ class PredictionRequest(BaseModel):
             array = np.asarray(epoch)
             if array.shape != first_epoch.shape or not np.isfinite(array).all():
                 raise ValueError(f"La época {index} tiene una forma inválida o muestras no finitas.")
+        if first_epoch.ndim == 2 and first_epoch.shape[0] != DL_INPUT_CHANNELS:
+            raise ValueError(f"TinySleepNet requiere exactamente {DL_INPUT_CHANNELS} canales.")
         return epochs
 
 
@@ -181,6 +199,18 @@ def find_run_id_for_artifact(client: MlflowClient, artifact_path: str) -> str:
     )
 
 
+def configured_model_reference(client: MlflowClient, artifact_path: str) -> dict[str, str]:
+    """Resuelve el run configurado para una ruta de artefacto de modelo."""
+
+    for model_config in MODEL_REGISTRY["models"].values():
+        if model_config.get("artifact_name") == artifact_path:
+            return resolve_latest_model_artifact(client, model_config)
+
+    raise KeyError(
+        f"El artefacto '{artifact_path}' no está configurado en el registro de modelos."
+    )
+
+
 def model_path(artifact_path: str) -> Path:
     """Descarga un artefacto y resuelve su run por nombre."""
 
@@ -189,10 +219,10 @@ def model_path(artifact_path: str) -> Path:
         return local_path
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    run_id = find_run_id_for_artifact(MlflowClient(), artifact_path)
+    reference = configured_model_reference(MlflowClient(), artifact_path)
     downloaded_path = mlflow.artifacts.download_artifacts(
-        run_id=run_id,
-        artifact_path=artifact_path,
+        run_id=reference["run_id"],
+        artifact_path=reference["artifact_path"],
     )
     return Path(downloaded_path)
 
@@ -261,15 +291,38 @@ def health() -> dict:
     }
 
 
-@app.post("/predict", response_model=PredictionResponse)
+@app.post("/predict-tinysleepnet", response_model=PredictionResponse)
 def predict(request: PredictionRequest) -> PredictionResponse:
     """Clasifica las 15 épocas recibidas con el checkpoint seleccionado."""
 
     # (épocas, muestras) -> (lote=1, secuencia=15, canal=1, muestras=3000)
+    if request.channel_names != list(DL_CHANNEL_NAMES):
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "channel_names debe respetar el orden fijo de TinySleepNet.",
+                    "expected": list(DL_CHANNEL_NAMES)},
+        )
     signal_array = np.asarray(request.epochs, dtype=np.float32)
-    input_channels = 1 if signal_array.ndim == 2 else signal_array.shape[1]
+    input_channels = signal_array.shape[1]
     if len(request.channel_names) != input_channels:
         raise HTTPException(status_code=422, detail="channel_names no coincide con los canales de epochs.")
+    presence = signal_array[:, 3:6, :]
+    if not np.all(np.isin(presence, (0.0, 1.0))):
+        raise HTTPException(status_code=422, detail="Las marcas de presencia deben ser 0 o 1.")
+    if not np.all(presence == presence[:, :, :1]):
+        raise HTTPException(
+            status_code=422,
+            detail="Cada marca de presencia debe mantenerse constante en la secuencia.",
+        )
+    for signal_index in range(3):
+        missing = presence[:, signal_index, 0] == 0.0
+        if np.any(missing) and not np.all(signal_array[missing, signal_index, :] == 0.0):
+            raise HTTPException(
+                status_code=422,
+                detail="Una señal marcada como ausente debe enviarse completamente en ceros.",
+            )
+    if not np.any(presence[:, :2, 0] == 1.0):
+        raise HTTPException(status_code=422, detail="Debe llegar al menos un EEG.")
     try:
         model = load_model(str(model_path(request.model_artifact)), input_channels)
     except Exception as error:
@@ -294,11 +347,10 @@ def predict(request: PredictionRequest) -> PredictionResponse:
     ]
     return PredictionResponse(
         model_name=request.model_artifact,
-        channel=request.channel,
+        channel="TinySleepNet-6-canales",
         sampling_rate_hz=request.sampling_rate_hz,
         predictions=predictions,
     )
-
 
 @app.post("/predict-xgboost", response_model=XGBoostPredictionResponse)
 def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionResponse:
@@ -309,20 +361,44 @@ def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionRespo
             status_code=422,
             detail="channel_names debe tener la misma cantidad de canales que epochs.",
         )
+    if (
+        len(request.channel_names) != len(XGBOOST_REQUIRED_CHANNELS)
+        or set(request.channel_names) != set(XGBOOST_REQUIRED_CHANNELS)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "XGBoost requiere exactamente las tres señales configuradas.",
+                "expected": list(XGBOOST_REQUIRED_CHANNELS),
+            },
+        )
 
     try:
         artifact = load_xgboost_artifact(request.model_artifact)
         raw_epochs = np.asarray(request.epochs, dtype=np.float32)
-        n_epochs, n_channels, _ = raw_epochs.shape
+        present_indices = [
+            index
+            for index in range(raw_epochs.shape[1])
+            if np.any(raw_epochs[:, index, :] != 0.0)
+        ]
+        present_channels = [request.channel_names[index] for index in present_indices]
+        if not any(name in present_channels for name in XGBOOST_REQUIRED_CHANNELS[:2]):
+            raise HTTPException(
+                status_code=422,
+                detail="XGBoost requiere al menos una señal EEG no vacía.",
+            )
+
+        present_epochs = raw_epochs[:, present_indices, :]
+        n_epochs, n_channels, _ = present_epochs.shape
         dataset = EpochDataset(
             recording_id="api-request",
             subject_code="api-request",
             night="0",
-            X=raw_epochs,
+            X=present_epochs,
             y=np.full(n_epochs, "W", dtype=str),
             recording_ids=np.full(n_epochs, "api-request", dtype=object),
             subject_codes=np.full(n_epochs, "api-request", dtype=object),
-            channel_names=request.channel_names,
+            channel_names=present_channels,
             sfreq=request.sampling_rate_hz,
             signal_unit=request.signal_unit,
             dropped_epochs=0,
@@ -332,28 +408,31 @@ def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionRespo
             feature_dataset.X,
             columns=feature_dataset.feature_names,
         )
+        feature_columns = artifact["feature_columns"]
+        combo = "__".join(
+            XGBOOST_CHANNEL_SLUGS[channel]
+            for channel in XGBOOST_REQUIRED_CHANNELS
+            if channel in present_channels
+        )
+        combo_column = f"channel_combo_{combo}"
+        if combo_column not in feature_columns:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Combinación no soportada por el modelo: {combo}",
+            )
+
         channel_flags = {
             "channel_count": n_channels,
-            "has_eeg_pz_oz": int(any("pz-oz" in channel.lower() for channel in request.channel_names)),
-            "has_eog_horizontal": int(any("eog" in channel.lower() for channel in request.channel_names)),
-            "channel_combo_eeg_fpz_cz": int(any("fpz-cz" in channel.lower() for channel in request.channel_names)),
-            "channel_combo_eeg_fpz_cz__eeg_pz_oz": int(
-                any("fpz-cz" in channel.lower() for channel in request.channel_names)
-                and any("pz-oz" in channel.lower() for channel in request.channel_names)
-            ),
-            "channel_combo_eeg_fpz_cz__eeg_pz_oz__eog_horizontal": int(
-                any("fpz-cz" in channel.lower() for channel in request.channel_names)
-                and any("pz-oz" in channel.lower() for channel in request.channel_names)
-                and any("eog" in channel.lower() for channel in request.channel_names)
-            ),
-            "channel_combo_eeg_fpz_cz__eog_horizontal": int(
-                any("fpz-cz" in channel.lower() for channel in request.channel_names)
-                and any("eog" in channel.lower() for channel in request.channel_names)
-            ),
+            **{
+                f"has_{slug}": int(channel in present_channels)
+                for channel, slug in XGBOOST_CHANNEL_SLUGS.items()
+            },
         }
         for column, value in channel_flags.items():
             feature_frame[column] = value
-        feature_columns = artifact["feature_columns"]
+        for column in feature_columns:
+            if column.startswith("channel_combo_"):
+                feature_frame[column] = int(column == combo_column)
         feature_frame = feature_frame.reindex(columns=feature_columns, fill_value=0.0)
         model = artifact["model"]
         encoded = model.predict(feature_frame)
@@ -380,6 +459,8 @@ def predict_xgboost(request: XGBoostPredictionRequest) -> XGBoostPredictionRespo
             probability_labels = np.asarray(class_labels)[model_classes]
         else:
             probability_labels = np.asarray(class_labels)
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(
             status_code=503,
