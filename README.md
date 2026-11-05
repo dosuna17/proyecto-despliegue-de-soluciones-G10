@@ -27,13 +27,13 @@ Proyecto de grado de la Maestría en Inteligencia Artificial (Universidad de los
 
 **Problema.** La estadificación del sueño se hace a mano, época por época: una noche tiene entre 800 y 1200 épocas de 30 s. Es lenta y variable: dos expertos coinciden en cerca del 83 % de las épocas, y en el estadio N1 apenas en el 63 %.
 
-**Solución.** Un modelo de aprendizaje de máquina asigna a cada época una de seis clases, y una aplicación web muestra el resultado y las épocas que conviene revisar.
+**Solución.** Un modelo de aprendizaje de máquina asigna a cada época uno de cinco estadios, y una aplicación web muestra el resultado y las épocas que conviene revisar.
 
 **Alcance.**
 
 | Aspecto | Decisión |
 |---|---|
-| Clases | 6: vigilia (W), N1, N2, N3, REM y movimiento (M). Las etapas 3 y 4 de Rechtschaffen y Kales se unen en N3 (criterio AASM); las épocas sin clasificar ("?") se excluyen |
+| Clases | 5: vigilia (W), N1, N2, N3 y REM. Las etapas 3 y 4 de Rechtschaffen y Kales se unen en N3 (criterio AASM). Las épocas de movimiento (M) y las sin clasificar ("?") se excluyen del entrenamiento del clasificador |
 | Datos | Subconjunto Sleep Cassette de [Sleep-EDF Expanded](https://physionet.org/content/sleep-edfx/1.0.0/): 153 registros de 78 personas sanas |
 | Señales | Al menos un EEG (Fpz-Cz, Pz-Oz o ambos), con EOG y EMG opcionales: 12 combinaciones |
 | Evaluación | Partición por persona (ninguna persona aparece en entrenamiento y prueba) y comparación con el acuerdo entre expertos humanos |
@@ -54,11 +54,11 @@ Proyecto de grado de la Maestría en Inteligencia Artificial (Universidad de los
 | Componente | Tecnología | Función |
 |---|---|---|
 | Tablero | Streamlit | Selección del estudio y de las señales; hipnograma, distribución de estadios y revisión por época |
-| API | FastAPI | Recibe las épocas y los nombres de los canales, elige el modelo según la combinación y devuelve la predicción, la confianza y las probabilidades |
-| Modelos | PyTorch (TinySleepNet) y XGBoost | Van dentro de la imagen de la API; la predicción no depende de servicios externos |
+| API | FastAPI | Recibe las épocas y las señales disponibles y devuelve, por época, el estadio predicho, la confianza y las probabilidades |
+| Modelos | PyTorch (TinySleepNet) y XGBoost | La API carga desde MLflow el modelo marcado como campeón |
 | Contenedores | Docker y Docker Compose | Un servicio para la API y otro para el tablero |
 | Nube | AWS EC2 | Aloja los contenedores <!-- PENDIENTE (Daniel): tamaño de la instancia y región --> |
-| Experimentos y datos | MLflow y DVC sobre S3 | Solo para entrenar y versionar; no intervienen en la predicción |
+| Experimentos y datos | MLflow y DVC sobre S3 | Registro de experimentos, versionado de datos y almacenamiento de los modelos |
 
 ## 4. Instrucciones de uso
 
@@ -124,7 +124,7 @@ docker compose up --build
 
 ## 9. Reproducir el despliegue
 
-<!-- PENDIENTE (Daniel): pasos para crear la instancia EC2, la IP fija, el grupo de seguridad, el .env del servidor y el despliegue continuo con GitHub Actions -->
+<!-- PENDIENTE (Daniel): pasos para crear la instancia EC2, la IP fija, el grupo de seguridad y el .env del servidor -->
 
 ## 10. Reproducir el entrenamiento
 
@@ -143,7 +143,7 @@ Cada etapa tiene un comando y su configuración en `configs/`. Cada corrida qued
 |---|---|---|
 | `SLEEP_STAGING_API_URL` | `.env` | Dirección de la API que usa el tablero |
 | `MODEL_PATH` | `.env` | Ruta del modelo dentro de la imagen de la API |
-| `MLFLOW_TRACKING_URI` | `.env` | Servidor de MLflow (solo entrenamiento) |
+| `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD` | `.env` | Servidor de MLflow y credenciales de acceso |
 | Hiperparámetros de TinySleepNet | [`configs/models/tinysleepnet.yaml`](configs/models/tinysleepnet.yaml) | Semilla, tamaño de secuencia y de lote, tasa de aprendizaje, parada temprana |
 | Umbral de baja confianza, estudios de demostración, tamaño máximo de carga | <!-- PENDIENTE (María José) --> `configs/app.yaml` | Comportamiento del tablero |
 
@@ -151,9 +151,7 @@ Cada etapa tiene un comando y su configuración en `configs/`. Cada corrida qued
 
 ## 12. Credenciales de ejemplo
 
-Ninguna credencial se guarda en el repositorio. El archivo [`.env.example`](.env.example) lista las variables necesarias con valores de ejemplo; se copia a `.env`, que Git ignora. En el despliegue continuo, las credenciales viven en GitHub Secrets.
-
-<!-- PENDIENTE (Daniel): crear .env.example -->
+Ninguna credencial se guarda en el repositorio. El archivo [`.env.example`](.env.example) lista las variables necesarias con valores de ejemplo; se copia a `.env`, que Git ignora.
 
 ## 13. Estructura del repositorio
 
