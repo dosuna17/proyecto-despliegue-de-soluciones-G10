@@ -1,2 +1,21 @@
+# Streamlit lee este archivo cuando se ejecuta desde app/dashboard/
+# (así lo hace la imagen Docker del tablero). Si lo corre desde la raíz del
+# repositorio, use: streamlit run app/dashboard/app.py --server.maxUploadSize=200
+
 [client]
+# Nunca mostrar trazas de Python al usuario; los errores se explican en
+# lenguaje llano y el detalle queda en el registro del servidor.
 showErrorDetails = "none"
+toolbarMode = "minimal"
+
+[server]
+# MB. Un PSG de Sleep Cassette pesa entre 50 y 80 MB.
+# Debe coincidir con carga.tamano_maximo_mb de configs/app.yaml.
+maxUploadSize = 200
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+# Sin sección [theme]: así Streamlit respeta el modo claro u oscuro del
+# sistema del usuario, y las gráficas eligen su paleta según ese modo.

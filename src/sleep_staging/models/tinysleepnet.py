@@ -186,9 +186,8 @@ class TinySleepNet(nn.Module):
         """
         Inferencia lista para servir: aplica softmax sobre los logits y
         devuelve también la clase predicha y su confianza (prob. máxima).
-        Pensado para el contrato de app/dashboard/model_interface.py
-        (predicción + confianza + probabilidades por clase), que la API
-        de Daniel expondrá eventualmente en POST /predict.
+        Lo usa la API (POST /predict-tinysleepnet) para devolver la predicción,
+        la confianza y las probabilidades por clase que muestra el tablero.
 
         Devuelve un dict con:
           - "pred_class": índice de clase más probable, shape (batch,) o (batch, seq_len)
