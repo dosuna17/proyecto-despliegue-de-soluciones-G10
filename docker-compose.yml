@@ -16,6 +16,7 @@ services:
       MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-modelo_final/flexible_final.pth}
       XGBOOST_ARTIFACT_PATH: ${XGBOOST_ARTIFACT_PATH:-files/best-xgboost-multicanal.joblib}
       MODEL_PATH: ${MODEL_PATH:-}
+      MODEL_RUN_ID_CHECK_INTERVAL_SECONDS: ${MODEL_RUN_ID_CHECK_INTERVAL_SECONDS:-86400}
     volumes:
       - ${MODEL_DIR:-./modelos}:${MODEL_MOUNT_PATH:-/models}:ro
     restart: unless-stopped
