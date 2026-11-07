@@ -6,9 +6,11 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-COPY requirements.txt .
+COPY app/api/requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir torch==2.14.0+cpu \
+        --index-url https://download.pytorch.org/whl/cpu
 
 COPY app ./app
 COPY src ./src
