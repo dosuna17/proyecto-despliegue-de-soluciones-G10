@@ -1,0 +1,100 @@
+# Configuración del tablero de clasificación de estadios del sueño.
+#
+# Cada valor puede sobrescribirse con una variable de entorno (columna
+# "Variable" en app/dashboard/manuales/Guia_Despliegue_Tablero.md), de modo
+# que el mismo archivo sirve en local y en la nube sin editar código.
+
+api:
+  # Dirección de la API de inferencia. En docker-compose es http://api:8000.
+  url: http://localhost:8000
+  # Segundos máximos de espera para /health y /models.
+  timeout_consulta_s: 10
+  # Segundos máximos de espera por cada bloque de inferencia.
+  timeout_inferencia_s: 120
+  # Bloques que se envían a la vez. La API atiende varias solicitudes en
+  # paralelo; 4 equilibra velocidad y consumo de memoria en una instancia pequeña.
+  solicitudes_paralelas: 4
+  # Reintentos ante un fallo de red puntual (no ante errores de validación).
+  reintentos: 2
+
+modelo:
+  # Respaldo usado solo si la API todavía no expone GET /models.
+  # Debe coincidir con lo que la API realmente acepta.
+  nombre: TinySleepNet
+  descripcion: >-
+    Red neuronal convolucional y recurrente entrenada con registros de
+    Sleep-EDFx (Sleep Cassette). Acepta cualquier combinación de señales
+    que incluya al menos un EEG.
+  endpoint: /predict-tinysleepnet
+  epocas_por_llamada: 15
+  # Orden fijo de las señales que espera el modelo. La API recibe estas
+  # señales seguidas de una marca de presencia (0/1) por cada una.
+  canales_modelo:
+    - EEG Fpz-Cz
+    - EEG Pz-Oz
+    - EOG horizontal
+  clases: [W, N1, N2, N3, REM]
+  # Desempeño del modelo en personas que no participaron en el entrenamiento.
+  # Dejar en null hasta tener los valores definitivos del artículo; mientras
+  # sean null, el tablero no muestra la sección.
+  desempeno_referencia:
+    exactitud: null
+    kappa: null
+    f1_macro: null
+    descripcion_evaluacion: null
+
+comparacion_modelos:
+  # Solo para la sustentación: muestra además la clasificación de XGBoost.
+  # En la interfaz para el usuario final debe quedar en false.
+  mostrar: false
+  nombre: XGBoost
+  endpoint: /predict-xgboost
+  epocas_por_llamada: 200
+  canales_modelo:
+    - EEG Fpz-Cz
+    - EEG Pz-Oz
+    - EOG horizontal
+
+senales:
+  frecuencia_hz: 100
+  duracion_epoca_s: 30
+  # Nombres aceptados en los archivos EDF para cada señal (sin distinguir
+  # mayúsculas). El primero es el nombre que usa el modelo.
+  alias:
+    EEG Fpz-Cz: [EEG Fpz-Cz, Fpz-Cz, EEG FPZ-CZ, FpzCz]
+    EEG Pz-Oz: [EEG Pz-Oz, Pz-Oz, EEG PZ-OZ, PzOz]
+    EOG horizontal: [EOG horizontal, EOG, HEOG, EOG Horizontal]
+    EMG submental: [EMG submental, EMG, EMG chin, Chin EMG]
+
+recorte:
+  # Margen de vigilia que se conserva antes y después del periodo de sueño,
+  # igual al usado al preparar los datos de entrenamiento.
+  margen_min: 30
+  # Interrupciones de vigilia más cortas que esto se consideran parte del
+  # mismo periodo de sueño (despertares nocturnos).
+  max_interrupcion_min: 60
+  # Solo cuenta el sueño sostenido: tramos de al menos estos minutos seguidos.
+  # Evita que una época suelta clasificada como sueño durante la vigilia
+  # (error del modelo o microsueño) adelante el inicio o retrase el final.
+  min_bloque_sueno_min: 5
+  # Un periodo con menos sueño que esto no se toma como periodo principal.
+  min_sueno_periodo_min: 30
+
+interpretacion:
+  # Por debajo de esta confianza una época se marca para revisión humana.
+  umbral_confianza: 0.83
+  # Concordancia típica entre dos expertos humanos (kappa de Cohen),
+  # Danker-Hopfe et al., J Sleep Res 2009;18:74-84.
+  kappa_entre_expertos: 0.76
+
+carga:
+  # Tamaño máximo de un archivo subido, en MB. Debe ser igual o menor que
+  # server.maxUploadSize en app/dashboard/.streamlit/config.toml.
+  tamano_maximo_mb: 200
+  # Mínimo de épocas analizables (una secuencia completa del modelo).
+  min_epocas: 15
+
+estudios_demo:
+  # Carpeta con los estudios de demostración (.npz), relativa a la raíz
+  # del repositorio. Se generan con scripts/generar_estudios_demo.py.
+  carpeta: app/dashboard/estudios_demo

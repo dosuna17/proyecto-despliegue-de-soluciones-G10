@@ -4,8 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: sleep-staging-api
+    # La API solo la usa el tablero: no se publica a Internet. Para probarla
+    # desde la propia instancia: curl http://localhost:8000/health
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:?Define MLFLOW_TRACKING_URI en .env}
       MLFLOW_TRACKING_USERNAME: ${MLFLOW_TRACKING_USERNAME}
@@ -32,14 +34,8 @@ services:
   dashboard:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: app/dashboard/Dockerfile
     container_name: sleep-staging-dashboard
-    command:
-      - streamlit
-      - run
-      - app/dashboard/app.py
-      - --server.address=0.0.0.0
-      - --server.port=8501
     ports:
       - "8501:8501"
     depends_on:
@@ -47,8 +43,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     environment:
-      SLEEP_STAGING_DATA_ROOT: /data/sleep-edfx
+      # Dentro de la red de Docker la API se llama "api".
       SLEEP_STAGING_API_URL: http://api:8000
-    volumes:
-      - ${SLEEP_STAGING_DATA_ROOT_HOST}:/data/sleep-edfx
-      - ./app:/app/app
+      # Opcionales (si no se definen se usa configs/app.yaml):
+      TABLERO_UMBRAL_CONFIANZA: ${TABLERO_UMBRAL_CONFIANZA:-}
+      TABLERO_SOLICITUDES_PARALELAS: ${TABLERO_SOLICITUDES_PARALELAS:-}
+      TABLERO_TIMEOUT_INFERENCIA_S: ${TABLERO_TIMEOUT_INFERENCIA_S:-}
+      # true solo para la sustentación (muestra también XGBoost).
+      TABLERO_MOSTRAR_COMPARACION: ${TABLERO_MOSTRAR_COMPARACION:-false}

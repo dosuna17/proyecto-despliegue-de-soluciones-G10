@@ -1,0 +1,7 @@
+# Solo para desarrollo y pruebas del tablero (no van en la imagen Docker).
+-r requirements.txt
+pytest==8.3.4
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+httpx==0.28.1
+pyEDFlib==0.1.42
