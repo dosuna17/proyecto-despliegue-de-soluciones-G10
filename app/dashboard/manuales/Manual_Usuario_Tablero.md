@@ -1,132 +1,322 @@
-# Manual de Usuario — 🌙 Sleep Staging Assistant 
+# Manual de usuario del tablero
 
-**Dirigido a:** técnicos de polisomnografía (PSG) que revisan estudios de sueño.
+**Asistente de clasificación de estadios del sueño**
 
-**Versión:** Entrega 3 con capturas del tablero funcionando con predicciones reales, incluyendo los dos modelos disponibles (XGBoost y TinySleepNet).
+Este manual está dirigido al técnico o profesional de sueño que usa el tablero.
+Explica cómo analizar un registro y qué significa cada elemento de la pantalla.
 
----
-
-## 1. Introducción
-
-Sleep Staging Assistant es una herramienta de apoyo para la revisión de estudios de polisomnografía. A partir de las señales fisiológicas registradas durante la noche, clasifica automáticamente cada segmento de 30 segundos (época) en uno de los cinco estadios del sueño: **W** (vigilia), **N1**, **N2**, **N3** y **REM**.
-
-**Esta herramienta no reemplaza el criterio del especialista ni constituye un diagnóstico clínico.** Su función es reducir el tiempo de revisión manual, dirigiendo su atención hacia las épocas donde el modelo tiene menor certeza en su predicción, en vez de requerir que revise una por una las cerca de 800 a 1200 épocas que puede tener una noche completa de registro.
-
-No necesita ningún conocimiento técnico de programación ni de los modelos de inteligencia artificial detrás de la herramienta para usarla, solo el estudio que desea analizar.
+> **Herramienta de apoyo, no de diagnóstico.** La clasificación la genera un
+> modelo de aprendizaje automático y puede contener errores. Debe ser revisada
+> por un profesional del sueño antes de usarse en cualquier decisión clínica.
 
 ---
 
-## 2. Paso 1: Seleccionar un estudio y las señales
+## 1. Qué hace el tablero
 
-Al abrir la herramienta, la primera pantalla le presenta la lista de estudios disponibles, cada uno con su tipo de origen y duración total, y las señales fisiológicas que puede activar para el análisis:
+El tablero recibe una polisomnografía (PSG) y clasifica cada periodo de 30
+segundos (una **época**) en uno de cinco estadios:
 
-![Pantalla de selección de estudio y señales](manual_imgs/pantalla1_seleccion.png)
-
-- **Sleep Cassette (SC):** registros de sujetos sanos, sin medicación relacionada con el sueño.
-- **Sleep Telemetry (ST):** registros de sujetos con dificultad leve para conciliar el sueño.
-
-Seleccione el estudio que desea analizar haciendo clic sobre la tarjeta correspondiente.
-
-Debajo, encontrará las señales fisiológicas disponibles para activar:
-
-| Señal | Estado |
+| Estadio | Significado |
 |---|---|
-| EEG Fpz-Cz | Siempre activa, es la señal mínima requerida y no se puede desactivar |
-| EEG Pz-Oz | Opcional |
-| EOG horizontal | Opcional |
-| EMG submentoniano | Opcional |
+| W | Vigilia |
+| N1 | Sueño ligero (transición) |
+| N2 | Sueño ligero estable |
+| N3 | Sueño profundo (ondas lentas) |
+| REM | Sueño con movimientos oculares rápidos |
 
-**Importante:** solo puede activar una señal opcional si ya existe un modelo entrenado que la utilice. Si una señal aparece marcada como *"sin modelo aún"* (como EMG submentoniano en la captura), el sistema no le permitirá activarla, esto no es un error, simplemente significa que el equipo todavía no ha entrenado un modelo que use esa combinación de señales. Esta lista se actualiza automáticamente a medida que el equipo entrena y habilita nuevos modelos, sin que usted deba hacer nada distinto.
+Con esa clasificación construye el hipnograma, calcula indicadores del sueño,
+señala las épocas en las que el modelo tuvo dudas y permite descargar el
+resultado.
 
-La combinación de señales que active aquí determina **qué modelos estarán disponibles para elegir en el siguiente paso**, por eso es importante activar todas las señales que le interesan antes de continuar. Por ejemplo, si activa EEG Fpz-Cz, EEG Pz-Oz y EOG horizontal a la vez (como en la captura siguiente), tendrá acceso tanto al modelo de línea base como al modelo avanzado en el paso 2:
-
-![Selección con las tres señales activas](manual_imgs/pantalla1_dos_modelos_2.png)
-
-Una vez conforme con su selección, haga clic en **"Analizar estudio"**. La carga puede tardar hasta un minuto, ya que el sistema procesa la señal real del estudio completo.
-
----
-
-## 3. Paso 2: Elegir el modelo
-
-En la pantalla de análisis, justo debajo del encabezado del estudio, encontrará la sección **"Modelo"**, con la opción de ver los resultados calculados por cada modelo disponible:
-
-![Resumen del estudio y selector de modelo](manual_imgs/pantalla2_resumen.png)
-
-- Solo aparecen como opción los modelos que pueden calcularse con las señales que usted activó en el paso anterior. En la captura del paso 2 solo "XGBoost (línea base)" aparece disponible porque esas eran las únicas señales activadas; si en cambio activó EEG Fpz-Cz + EOG horizontal (como en la captura de abajo), la opción **"TinySleepNet"** también aparece en el selector:
-
-![Selector de modelo mostrando TinySleepNet como opción disponible](manual_imgs/pantalla2_resumen2.png)
-
-- Si activó pocas señales, es posible que solo un modelo esté disponible. Si desea comparar más de un modelo, vuelva al paso anterior (botón **"Cambiar estudio"**) y active las señales adicionales que el modelo que busca necesite.
-- Cambiar de modelo aquí **no vuelve a cargar el estudio** solo recalcula las predicciones con el modelo elegido, así que puede alternar entre modelos disponibles para comparar sus resultados sobre el mismo estudio. La primera vez que elige un modelo en la sesión, verá un indicador de carga ("Calculando predicciones con...") mientras el sistema ejecuta el modelo sobre el estudio completo; las siguientes veces que vuelva a ese mismo modelo, el resultado ya calculado se muestra de inmediato.
+El uso tiene tres etapas, que se ven en la parte superior de la pantalla:
+**1 · Carga del registro → 2 · Clasificación → 3 · Resultados**.
 
 ---
 
-## 4. Interpretar el resumen del estudio
+## 2. Etapa 1: cargar el registro y elegir las señales
 
-En la misma vista de arriba, encontrará cuatro indicadores generales:
+<!-- CAPTURA: pantalla de carga con un estudio de demostración seleccionado -->
 
-- **Duración total:** duración del registro analizado, después de descontar los periodos prolongados de vigilia al inicio y al final de la noche.
-- **Épocas totales:** número de segmentos de 30 segundos que componen el estudio.
-- **Eficiencia de sueño:** porcentaje del registro que el modelo clasificó en algún estadio de sueño (no vigilia).
-- **Baja confianza:** número de épocas donde el modelo tiene menos de un 65% de certeza en su predicción, estas son las que ameritan su revisión prioritaria. En el ejemplo de la captura, 119 de 841 épocas quedaron marcadas así.
+### 2.1 Elegir el registro
 
-Debajo, la **distribución de estadios** muestra qué porcentaje del estudio corresponde a cada una de las cinco etapas (W, N1, N2, N3, REM).
+Hay dos opciones:
 
-Estos mismos indicadores se recalculan automáticamente cuando cambia de modelo en la sección "Modelo", así puede comparar, por ejemplo, cuántas épocas de baja confianza reporta XGBoost frente a TinySleepNet sobre el mismo estudio.
+- **Estudio de demostración.** Registros reales de la base pública Sleep-EDFx
+  (Sleep Cassette) de personas que **no** se usaron para entrenar el modelo.
+  Incluyen el hipnograma del experto, así que permiten comparar.
+- **Subir mi registro (EDF).**
+  - *Archivo de señales (PSG)*, obligatorio. Formato EDF o EDF+, máximo 200 MB.
+  - *Hipnograma del experto*, opcional. Si lo sube, el tablero compara la
+    clasificación del modelo con la del experto.
+
+Los archivos se procesan solo durante su sesión y no se guardan en el servidor.
+
+El cuadro para subir archivos muestra sus textos en inglés (*Drag and drop file
+here*, *Browse files*): es el componente estándar de la herramienta con la que
+se construyó el tablero. Puede arrastrar el archivo al cuadro o pulsar
+*Browse files* para buscarlo.
+
+Al leer el archivo, el tablero muestra la duración del registro, la hora de
+inicio de la grabación y si hay hipnograma. Si alguna señal venía a una
+frecuencia distinta de 100 Hz, la ajusta y lo informa.
+
+### 2.2 Elegir las señales
+
+El tablero revisa qué señales contiene el archivo y muestra cuatro casillas:
+
+| Casilla | Para qué le sirve al modelo |
+|---|---|
+| EEG Fpz-Cz (frontal) | Distinguir el sueño profundo (N3) |
+| EEG Pz-Oz (posterior) | Reconocer el ritmo alfa de la vigilia relajada |
+| EOG horizontal | Reconocer el sueño REM y la vigilia |
+| EMG submental | Separar REM de vigilia por el tono muscular |
+
+Debajo de cada casilla aparece su estado:
+
+- ✅ **Disponible**: la señal está en el archivo y el modelo la usa.
+- ⛔ **No está en el archivo**: el registro no la trae.
+- ⛔ **El modelo aún no la usa**: la señal existe, pero el modelo actual no fue
+  entrenado con ella. La casilla se habilita sola cuando el modelo la incorpore.
+
+**Regla:** se necesita **al menos una señal EEG** (Fpz-Cz o Pz-Oz). EOG y EMG
+son opcionales. Esto da 12 combinaciones posibles:
+
+| EEG | Solo EEG | + EOG | + EMG | + EOG + EMG |
+|---|---|---|---|---|
+| Fpz-Cz | 1 | 2 | 3 | 4 |
+| Pz-Oz | 5 | 6 | 7 | 8 |
+| Fpz-Cz + Pz-Oz | 9 | 10 | 11 | 12 |
+
+El tablero indica en verde qué combinación eligió (por ejemplo, *Combinación 10
+de 12*). Si la selección no es válida, explica por qué y no deja continuar.
+
+### 2.3 Modelo
+
+El tablero usa un único modelo, el que obtuvo el mejor desempeño en la
+evaluación del proyecto. La tarjeta *Modelo de clasificación* indica cuál es y,
+cuando está disponible, qué tan bien coincidió con los expertos en personas
+que no participaron en su entrenamiento.
+
+Pulse **Generar clasificación** para continuar.
 
 ---
 
-## 5. Leer el hipnograma
+## 3. Etapa 2: clasificación
 
-El hipnograma es la gráfica de línea escalonada que representa la evolución del sueño a lo largo de toda la noche, época por época. El eje vertical muestra el estadio y el eje horizontal el número de época.
+<!-- CAPTURA: pantalla "Estamos generando la clasificación" -->
 
-![Hipnograma del estudio](manual_imgs/pantalla2_hipnograma.png)
+Aparece el aviso **"Estamos generando la clasificación"** con una barra de
+avance y el tiempo estimado restante. Mientras tanto el tablero:
 
-- Las **zonas resaltadas en rojo** marcan las épocas de baja confianza son las que el modelo señala como más inciertas, y las que le conviene revisar con mayor atención en lugar de recorrer el registro completo época por época.
-- La **línea punteada vertical** indica la época que tiene seleccionada actualmente en el panel de "Explorar época" (ver sección 6).
+1. Clasifica cada época del registro con el modelo.
+2. Ubica el periodo principal de sueño.
+3. Calcula los indicadores.
 
----
-
-## 6. Explorar una época específica
-
-Debajo del hipnograma, el panel **"Explorar época"** le permite examinar el detalle de una época puntual:
-
-![Panel de exploración de una época individual](manual_imgs/pantalla2_explorar_epoca.png)
-
-- Use el **deslizador** para moverse a cualquier época del estudio, o los botones **"Época anterior"** y **"Siguiente baja confianza"** para navegar de forma secuencial o saltar directamente entre las épocas que requieren su atención.
-- Para la época seleccionada, verá la **predicción del modelo** y su **confianza** (en la captura: *"Época 57 · predicha W · confianza 93%"*).
-- Debajo, cinco tarjetas muestran la **probabilidad que el modelo asignó a cada uno de los cinco estadios** para esa época siempre suman 100%. Cuando la probabilidad está muy repartida entre dos o más clases (en vez de concentrada casi por completo en una sola, como en el ejemplo), es una señal de que el modelo dudó entre esas opciones, información útil para decidir cuánto confiar en la predicción de esa época en particular.
-- Se muestra también la **etiqueta experta original** del hipnograma manual. Si no coincide con la predicción del modelo, aparecerá una advertencia visual, esto no significa necesariamente que el modelo esté equivocado, sino que es una época donde vale la pena que usted confirme el estadio con su propio criterio.
+No cierre ni recargue la página. La duración depende del largo del registro;
+la barra muestra cuánto falta. Si el servicio no responde, el tablero lo indica
+con un mensaje y un botón para volver a intentarlo.
 
 ---
 
-## 7. Ver las señales fisiológicas de una época
+## 4. Etapa 3: resultados
 
-En la parte inferior de la pantalla, se grafican las señales reales de la época seleccionada, para cada canal que usted activó en el Paso 1:
+<!-- CAPTURA: pantalla de resultados completa -->
 
-![Señales fisiológicas de la época seleccionada](manual_imgs/pantalla2_senales.png)
+### 4.1 Ficha del análisis
 
-Esto le permite inspeccionar visualmente la forma de onda de la señal detrás de la predicción, tal como lo haría al revisar un registro de PSG de forma tradicional.
+Resume qué se analizó: el registro, las señales usadas (y su número de
+combinación), el modelo y la **ventana analizada**.
+
+**Por qué hay una ventana analizada.** Un registro de Sleep Cassette dura cerca
+de 20 horas y la mayor parte es vigilia de día. El modelo se entrenó con la noche
+recortada a 30 minutos antes y después del sueño, así que analiza la misma
+ventana. Como un registro nuevo no trae hipnograma, el tablero clasifica primero
+el registro completo y luego ubica el periodo principal de sueño a partir de esa
+misma clasificación:
+
+- solo cuentan tramos de sueño de al menos 5 minutos seguidos, para que una
+  época suelta durante el día no adelante el inicio;
+- los despertares de menos de 60 minutos se consideran parte de la misma noche;
+- si hay varias siestas, se toma el periodo con más sueño.
+
+Todos estos valores se pueden ajustar en la configuración.
+
+### 4.2 Resumen del sueño
+
+Los indicadores se calculan dentro de la ventana analizada. Al pasar el cursor
+sobre el ícono **?** de cada uno, el tablero explica qué mide.
+
+| Indicador | Qué mide | Qué le dice al usuario |
+|---|---|---|
+| Tiempo total de sueño | Suma de las épocas N1, N2, N3 y REM | Cuánto durmió la persona |
+| Inicio – fin del sueño | Hora de la primera y la última época de sueño sostenido | Cuándo empezó y terminó la noche |
+| Despierto tras dormirse | Minutos en vigilia entre el inicio y el fin del sueño (WASO) | Si el sueño fue continuo o fragmentado |
+| Latencia de REM | Minutos desde que la persona se duerme hasta su primera época REM | Si el primer ciclo de sueño fue típico: en adultos suele estar entre 70 y 120 min; un valor muy distinto merece revisión |
+| Épocas para revisar | Épocas con confianza menor al umbral | Cuánto trabajo de revisión manual requiere el estudio |
+
+Debajo de los indicadores, **Tiempo en cada estadio** muestra en recuadros
+pequeños el porcentaje del tiempo total de sueño y los minutos de N1, N2, N3 y
+REM, cada uno con el borde de su color. Es un dato estándar de los informes de
+polisomnografía: permite ver, por ejemplo, si hubo poco sueño profundo o poco
+REM. La vigilia dentro de la ventana se informa aparte, porque no es sueño.
+
+**Indicadores que se decidió no mostrar:**
+
+- *Eficiencia del sueño*. Clínicamente es el tiempo dormido dividido entre el
+  tiempo en cama. El archivo no indica cuándo se apagaron las luces, así que el
+  valor sería engañoso.
+- *Latencia de sueño*. Por la misma razón: se mide desde que se apagan las
+  luces, dato que no está disponible.
+
+### 4.3 Hipnograma
+
+Muestra el estadio clasificado a lo largo de la noche, con la hora en el eje
+horizontal:
+
+- **Orden clínico habitual:** W arriba, luego REM, N1, N2 y N3 abajo.
+- **Bloques de color:** cada bloque es el estadio de esas épocas, con el mismo
+  color en todo el tablero y en los archivos descargados.
+- **Línea negra:** une los estadios y muestra cómo la persona pasa de uno a otro.
+- **Marcas grises** debajo del modelo: épocas de baja confianza para revisar.
+- Si subió el hipnograma del experto, se muestra **debajo, con el mismo
+  formato**, y una **franja inferior marca en rojo** las épocas en que modelo y
+  experto no coinciden. Se puede ocultar con el interruptor *Mostrar el
+  hipnograma del experto y las coincidencias*.
+- **Ver el registro completo** muestra también la vigilia fuera de la ventana.
+
+### 4.4 Señal y clasificación por época
+
+<!-- CAPTURA: visor de señal con una época de baja confianza -->
+
+Muestra las señales registradas, **cada una con su propio color** y su nombre a
+la izquierda, sobre un fondo limpio. Encima de cada época hay una **franja con
+el estadio clasificado** (su color y su nombre; ⚠ si la confianza es baja), y
+líneas grises separan las épocas de 30 segundos. Sirve para verificar en la
+señal por qué el modelo eligió cada estadio, igual que se hace al calificar un
+estudio.
+
+- **Anterior / Siguiente**: avanza de a una época.
+- **◀ Baja confianza / Baja confianza ▶**: salta a la época dudosa anterior o
+  siguiente. Es la forma más rápida de revisar el estudio.
+- **30 s / 5 min**: una sola época (la ventana clínica habitual) o diez épocas
+  para ver el contexto. En la vista de 5 minutos, la época seleccionada se
+  resalta con un fondo gris suave.
+- La barra deslizante permite ir a cualquier momento del registro.
+
+Debajo se muestra el detalle de la época seleccionada:
+
+- **Clasificación del modelo** y **confianza**.
+- **Segunda opción del modelo**: el estadio con la segunda probabilidad más
+  alta. Indica entre qué dos estadios dudó el modelo. Por ejemplo, si la
+  confianza es baja y la segunda opción es REM, conviene mirar en la señal los
+  movimientos oculares (EOG) y el tono muscular para decidir.
+- La etiqueta del **experto**, si se cargó el hipnograma, y si coincide.
+
+**Qué es la confianza.** Es la probabilidad que el modelo asigna al estadio
+elegido, de 0 a 100 %. No es una garantía de acierto: una época con confianza
+alta también puede estar mal clasificada. Pero las de confianza baja merecen
+revisión prioritaria.
+
+### 4.5 Comparación con el experto
+
+Solo aparece si hay hipnograma del experto.
+
+- **Coincidencia con el experto**: porcentaje de épocas en que coinciden.
+- **Kappa de Cohen**: corrige las coincidencias que ocurrirían por azar
+  (1 = acuerdo perfecto, 0 = azar). Como referencia, dos expertos humanos suelen
+  coincidir con un kappa cercano a 0.76 (Danker-Hopfe et al., 2009).
+- **Matriz de confusión**: cada fila es lo que dijo el experto y cada columna
+  lo que dijo el modelo. La diagonal son los aciertos; fuera de ella se ve con
+  qué estadio se confunde cada uno.
+
+Las épocas que el experto marcó como movimiento o no puntuó se excluyen, porque
+el modelo no predice esas categorías.
+
+### 4.6 Descargar resultados
+
+Hay dos archivos, para dos usos distintos:
+
+Los dos archivos incluyen **Hallazgos**: un resumen en palabras de lo que
+muestran los indicadores (cuánto y cuándo durmió la persona, cómo se repartió la
+noche, si el primer REM llegó dentro del rango habitual en adultos, cuántas
+épocas conviene revisar y, si hay hipnograma del experto, qué tanto coincidió
+el modelo y cuál fue la diferencia más frecuente). Es descriptivo: no
+interpreta ni diagnostica. Se dejó solo en los archivos porque en la página
+repetiría lo que ya muestran los indicadores y las gráficas.
+
+**Informe (PDF)**, para leer, imprimir o adjuntar al estudio. Tiene tres páginas:
+
+1. *Resumen:* aviso de herramienta de apoyo, datos del análisis, los 5
+   indicadores, los hallazgos y la distribución de los estadios.
+2. *Hipnograma* de la ventana analizada y, si hay hipnograma del experto, la
+   comparación (coincidencia, kappa y matriz de confusión).
+3. *Épocas para revisar*, de la menos a la más confiable (hasta 80), y cómo se
+   generó el informe.
+
+**Datos por época (Excel)**, para analizar. Tiene cuatro hojas:
+
+| Hoja | Contenido |
+|---|---|
+| Resumen | Hallazgos, datos del análisis, indicadores con lo que mide cada uno, distribución, comparación con el experto y la imagen del hipnograma |
+| Épocas | Una fila por época con filtros: hora, estadio (con su color), confianza, si conviene revisarla, si está en la ventana analizada, probabilidad de cada estadio y, si lo subió, la etiqueta del experto y si coincide |
+| Para revisar | Solo las épocas de baja confianza, ordenadas de la menos a la más confiable, con la segunda opción del modelo |
+| Cómo leer | Qué significa cada columna y cada término |
+
+Ambos archivos usan la fuente Century Gothic. En el PDF, si el servidor no
+tiene Century Gothic instalada, se usa URW Gothic, una versión libre del mismo
+diseño.
+
+Pulse **Analizar otro registro** para volver a la etapa 1.
 
 ---
 
-## 8. Preguntas frecuentes
+## 5. Mensajes frecuentes
 
-**¿Por qué no puedo activar una señal que necesito?**
-Porque todavía no existe un modelo entrenado que la utilice. Esta lista se amplía a medida que el equipo entrena nuevas variantes de modelo; no requiere ninguna acción de su parte.
-
-**¿Por qué no veo ningún modelo disponible en la Pantalla 2?**
-Revise que activó suficientes señales en el Paso 1, algunos modelos requieren más de una señal (por ejemplo, EEG Fpz-Cz junto con EOG horizontal para TinySleepNet, o EEG Fpz-Cz junto con EEG Pz-Oz para XGBoost). Vuelva a "Cambiar estudio" para ajustar su selección. El sistema le mostrará un mensaje indicándole que ningún modelo puede calcularse con la combinación activada.
-
-**¿Cuál modelo debo elegir si tengo varios disponibles?**
-No hay una respuesta única, ambos modelos clasifican los mismos cinco estadios, pero fueron entrenados con arquitecturas distintas. Le recomendamos usarlos como una segunda opinión: si ambos modelos coinciden en una época, hay mayor certeza; si difieren, es una buena candidata para revisión manual.
-
-**Al presionar "Analizar estudio" aparece un mensaje indicando que no fue posible conectarse al servicio de predicción, ¿qué hago?**
-Esto indica una interrupción temporal del servicio que calcula las predicciones, no un problema con el estudio que seleccionó ni con su uso de la herramienta. Contacte al equipo técnico responsable del sistema antes de intentarlo de nuevo.
-
-**El análisis está tardando más de lo normal, ¿debo cancelar?**
-No es necesario. Analizar un estudio completo (varios cientos de épocas) puede tardar hasta un par de minutos, especialmente la primera vez que se usa un modelo en la sesión. Si pasan más de 5 minutos sin respuesta, contacte al equipo técnico.
+| Mensaje | Qué hacer |
+|---|---|
+| *El archivo no contiene ninguna de las señales que el modelo reconoce* | Verifique que el EDF tenga un canal EEG Fpz-Cz o Pz-Oz. |
+| *Seleccione al menos una señal EEG* | Marque Fpz-Cz, Pz-Oz o ambas. |
+| *El registro dura menos de 7.5 minutos* | El modelo analiza secuencias de 15 épocas; use un registro más largo. |
+| *No hay conexión con el servicio de clasificación* | Espere unos minutos y pulse *Reintentar conexión*. |
+| *El modelo no está disponible en este momento* | El servicio está iniciando o sin acceso a los modelos; intente más tarde. |
 
 ---
 
-*Nota de versión: las capturas de este manual corresponden al estudio SC4001E0, con evidencia de los dos modelos verificados el día 18/09/2026, XGBoost (línea base) y TinySleepNet (avanzado, EEG+EOG). Cuando el equipo habilite modelos adicionales, aparecerán automáticamente como opción adicional en la sección "Modelo", este manual no requerirá cambios estructurales para reflejar esos modelos nuevos, salvo actualizar las capturas si el equipo lo considera necesario.*
+## 6. Limitaciones
+
+- El modelo se entrenó con Sleep Cassette (personas sanas de 25 a 101 años,
+  registros en casa). En otras poblaciones o equipos de registro su desempeño
+  puede ser menor.
+- La ventana de análisis se estima con la propia clasificación; en registros
+  muy fragmentados conviene revisar en el hipnograma completo que la ventana
+  sea la correcta.
+- Los indicadores son estimaciones a partir de la clasificación automática y
+  heredan sus errores.
+
+---
+
+## Anexo: por qué la interfaz muestra lo que muestra
+
+| Elemento | Por qué está | Qué le dice al usuario |
+|---|---|---|
+| Aviso de herramienta de apoyo | El modelo comete errores y el resultado no debe usarse sin revisión profesional | Que la clasificación es una propuesta para revisar, no un diagnóstico |
+| Un solo modelo | El usuario necesita el resultado más confiable, no elegir algoritmos. La comparación entre modelos se presenta en el artículo del proyecto | Qué modelo se usó y, cuando está configurado, qué tan bien rinde en personas no vistas |
+| Regla de al menos un EEG y 12 combinaciones | El modelo necesita EEG para clasificar; EOG y EMG aportan información adicional, como pide la propuesta del proyecto | Qué señales puede usar con su registro y por qué una selección no es válida |
+| Casillas deshabilitadas con motivo | Evitan elegir algo que terminaría en error | Si la señal falta en el archivo o si el modelo aún no la usa |
+| Aviso "Estamos generando la clasificación" | La clasificación de una noche toma tiempo y sin aviso parece que la página se congeló | Que el sistema está trabajando y cuánto falta |
+| Ventana analizada | El modelo se entrenó con la noche recortada a ±30 min del sueño; analizar 20 h de vigilia diurna produciría errores y distorsionaría los indicadores | Qué parte del registro se analizó y cuánta vigilia se dejó fuera |
+| Tiempo total de sueño, inicio–fin, despierto tras dormirse, latencia de REM | Son indicadores estándar del hipnograma que se pueden calcular sin la hora de apagado de luces | Cuánto durmió, cuándo y qué tan fragmentado fue el sueño |
+| Sin eficiencia ni latencia de sueño | Ambas requieren la hora de apagado de luces, que el EDF no trae; mostrarlas daría valores engañosos | — |
+| Épocas para revisar y umbral de confianza | La revisión manual de una noche completa es larga; priorizar las épocas dudosas la acelera | Cuántas épocas conviene revisar y dónde están |
+| Hipnograma con bloques de color y línea negra, en orden clínico y con eje en horas | El orden y la línea escalonada son la convención clínica; los colores permiten reconocer cada estadio sin leer el eje | La arquitectura del sueño en la noche y cómo se pasa de un estadio a otro |
+| Hipnograma del experto en panel aparte y franja de coincidencias | Superponer dos líneas en la misma gráfica no se distinguía; en paneles separados se comparan sin confundirse | Dónde coinciden modelo y experto, y dónde conviene revisar |
+| Hallazgos en texto, solo en el PDF y el Excel | Quien recibe el archivo no tiene la página delante; un resumen en palabras le hace comprensibles los números. En la página sería repetitivo | Lo más importante del estudio en pocas líneas |
+| Tiempo en cada estadio, en recuadros compactos | Es un dato estándar de los informes de polisomnografía; en recuadros ocupa poco espacio | Cómo se repartió la noche entre los estadios |
+| Visor de señal: un color por señal, fondo limpio y franja de estadio encima | Así se califica el sueño: mirando la señal época por época. Los colores distinguen las señales sin confundirse con los estadios | Por qué el modelo eligió cada estadio y si conviene corregirlo |
+| Segunda opción del modelo | La confianza sola no dice entre qué estadios dudó el modelo; una gráfica de 5 probabilidades ocupaba espacio sin aportar más | Qué mirar en la señal para decidir entre los dos estadios |
+| Kappa y referencia entre expertos | La exactitud sola se infla por la vigilia y N2, que son los estadios más frecuentes; el kappa corrige el azar y la referencia humana da contexto | Si el acuerdo con el experto es comparable al de dos expertos entre sí |
+| Matriz de confusión | Muestra qué estadios se confunden entre sí | Por ejemplo, si N1 tiende a clasificarse como N2 o REM |
+| Informe PDF | El resultado de un estudio se guarda, imprime y comparte como documento | Un informe completo y presentable del estudio |
+| Excel por época | El usuario necesita revisar, filtrar y llevar los datos a su propio flujo de trabajo | Toda la clasificación, época por época, organizada y explicada |
+| Colores por estadio | Paleta validada para daltonismo; además el estadio siempre va acompañado de su nombre o de su posición en el eje | Identificar estadios sin depender solo del color |
+| Errores en lenguaje llano | Una traza de Python no le sirve al usuario y puede exponer datos internos | Qué pasó y qué hacer |
