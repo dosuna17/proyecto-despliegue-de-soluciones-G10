@@ -164,6 +164,7 @@ def run_cv_flexible(
     salida: str = "resultados_flexible",
     max_epochs: Optional[int] = None,
     pliegues: Optional[Sequence[int]] = None,
+    paciencia: Optional[int] = None,
 ) -> Dict:
     """
     control=None  -> modelo flexible, entrenado y validado con todas las combinaciones.
@@ -172,7 +173,7 @@ def run_cv_flexible(
     """
     base.set_seed(base.CONFIG["seed"])
     max_epochs = max_epochs or base.MAX_EPOCHS
-    patience = base.EARLY_STOPPING_PATIENCE
+    patience = paciencia or base.EARLY_STOPPING_PATIENCE
 
     if control is None:
         combos = combinaciones_validas()

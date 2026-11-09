@@ -19,6 +19,8 @@ def main() -> None:
                         help="Nombre de una combinacion (p. ej. eeg_fpz_cz) para entrenar un modelo de control.")
     parser.add_argument("--salida", default="resultados_flexible", help="Carpeta donde se guardan los JSON.")
     parser.add_argument("--max-epocas", type=int, default=None, help="Por defecto, el valor del yaml.")
+    parser.add_argument("--paciencia", type=int, default=None,
+                        help="Paciencia del early stopping. Por defecto, el valor del yaml.")
     parser.add_argument("--pliegues", type=int, nargs="+", default=None, help="Pliegues a correr (por defecto todos).")
     parser.add_argument("--final", action="store_true",
                         help="Entrena el modelo final con todos los sujetos de train y guarda los pesos (.pth).")
@@ -34,7 +36,8 @@ def main() -> None:
     from sleep_staging.training.train_flexible import run_cv_flexible
 
     run_cv_flexible(control=args.control, salida=args.salida,
-                    max_epochs=args.max_epocas, pliegues=args.pliegues)
+                    max_epochs=args.max_epocas, pliegues=args.pliegues,
+                    paciencia=args.paciencia)
 
 
 if __name__ == "__main__":
