@@ -1,10 +1,19 @@
+import json
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import torch
 from fastapi.testclient import TestClient
+from mlflow.entities import ViewType
 
-from app.api.main import app, find_run_id_for_artifact, load_model
+import app.api.main as api_main
+from app.api.main import (
+    app,
+    find_run_id_for_artifact,
+    load_model,
+    validate_local_model_run_id,
+)
 from src.utils.mlflow_runs import resolve_latest_model_artifact
 from src.sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig
 
@@ -93,9 +102,15 @@ def test_resolve_latest_model_artifact_uses_run_name_and_artifact() -> None:
         info=SimpleNamespace(run_id="older-with-artifact", start_time=2),
         data=SimpleNamespace(tags={"mlflow.runName": "model-run"}),
     )
+    search_kwargs = {}
+
+    def search_runs(**kwargs):
+        search_kwargs.update(kwargs)
+        return [newest_without_artifact, older_with_artifact]
+
     client = SimpleNamespace(
         get_experiment_by_name=lambda name: SimpleNamespace(experiment_id="7"),
-        search_runs=lambda **kwargs: [newest_without_artifact, older_with_artifact],
+        search_runs=search_runs,
         list_artifacts=lambda run_id, path="": (
             [model_artifact] if run_id == "older-with-artifact" else []
         ),
@@ -114,6 +129,39 @@ def test_resolve_latest_model_artifact_uses_run_name_and_artifact() -> None:
         "run_id": "older-with-artifact",
         "artifact_path": "models/model.pth",
     }
+    assert search_kwargs["run_view_type"] == ViewType.ACTIVE_ONLY
+
+
+@pytest.mark.parametrize(
+    ("metadata_run_id", "latest_run_id", "expected_status"),
+    [
+        ("run-1", "run-1", "match"),
+        ("run-1", "run-2", "mismatch"),
+        (None, "run-1", "local_run_id_missing"),
+    ],
+)
+def test_validate_local_model_run_id_reports_status(
+    tmp_path, monkeypatch, metadata_run_id, latest_run_id, expected_status
+) -> None:
+    checkpoint = tmp_path / "modelo.pth"
+    metadata = checkpoint.with_name(f"{checkpoint.name}.metadata.json")
+    if metadata_run_id is not None:
+        metadata.write_text(json.dumps({"run_id": metadata_run_id}), encoding="utf-8")
+
+    monkeypatch.setattr(api_main, "_model_run_check_last_at", 0.0)
+    monkeypatch.setattr(api_main, "MODEL_RUN_ID_CHECK_INTERVAL_SECONDS", 60)
+    monkeypatch.setattr(
+        api_main,
+        "configured_model_reference",
+        lambda client, artifact_path: {"run_id": latest_run_id},
+    )
+    monkeypatch.setattr(api_main.mlflow, "set_tracking_uri", lambda uri: None)
+
+    validate_local_model_run_id(checkpoint, "modelo_final/flexible_final.pth")
+
+    assert api_main._model_run_check_status["status"] == expected_status
+    assert api_main._model_run_check_status["local_run_id"] == metadata_run_id
+    assert api_main._model_run_check_status["latest_run_id"] == latest_run_id
 
 
 def test_predict_reports_a_missing_model(monkeypatch) -> None:
