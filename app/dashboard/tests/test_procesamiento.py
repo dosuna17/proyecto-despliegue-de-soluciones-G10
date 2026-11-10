@@ -10,6 +10,7 @@ from procesamiento import (
     construir_bloque,
     kappa_cohen,
     numero_combinacion,
+    preparar_entrada,
     periodo_principal_sueno,
     todas_las_combinaciones,
     validar_combinacion,
@@ -128,3 +129,42 @@ def test_comparacion_excluye_epocas_no_puntuadas_y_movimiento():
     assert c.epocas_comparadas == 3 and c.epocas_excluidas == 2
     assert c.exactitud == pytest.approx(2 / 3)
     assert c.matriz.sum() == 3
+
+
+def test_preparar_entrada_reordena_canales_y_anade_mascaras_de_presencia():
+    epocas = np.array(
+        [
+            [[10, 11, 12], [20, 21, 22]],
+            [[30, 31, 32], [40, 41, 42]],
+        ],
+        dtype=np.float32,
+    )
+
+    entrada, presentes = preparar_entrada(
+        epocas,
+        ["EOG horizontal", "EEG Fpz-Cz"],
+    )
+
+    assert entrada.shape == (2, 6, 3)
+    assert presentes == (True, False, True)
+    np.testing.assert_array_equal(entrada[:, 0, :], epocas[:, 1, :])
+    np.testing.assert_array_equal(entrada[:, 1, :], np.zeros((2, 3)))
+    np.testing.assert_array_equal(entrada[:, 2, :], epocas[:, 0, :])
+    np.testing.assert_array_equal(
+        entrada[:, 3:, :],
+        np.array(
+            [
+                [[1, 1, 1], [0, 0, 0], [1, 1, 1]],
+                [[1, 1, 1], [0, 0, 0], [1, 1, 1]],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+
+def test_preparar_entrada_rechaza_muestras_no_finitas():
+    epocas = np.zeros((1, 1, 3), dtype=np.float32)
+    epocas[0, 0, 1] = np.nan
+
+    with pytest.raises(ValueError, match="valores no finitos"):
+        preparar_entrada(epocas, ["EEG Fpz-Cz"])

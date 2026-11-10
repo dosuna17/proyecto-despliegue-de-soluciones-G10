@@ -78,7 +78,7 @@ def resolve_latest_model_artifact(
     runs = client.search_runs(
         experiment_ids=[experiment.experiment_id],
         filter_string=" and ".join(filters),
-        run_view_type=ViewType.ALL,
+        run_view_type=ViewType.ACTIVE_ONLY,
         order_by=["attributes.start_time DESC"],
         max_results=100,
     )

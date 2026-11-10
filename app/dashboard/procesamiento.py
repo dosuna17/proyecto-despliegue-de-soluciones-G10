@@ -17,9 +17,18 @@ import numpy as np
 
 CANALES_EEG = ("EEG Fpz-Cz", "EEG Pz-Oz")
 CANALES_OPCIONALES = ("EOG horizontal", "EMG submental")
+POSICIONES_TINYSLEEPNET = ("EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal")
 ESTADIOS_SUENO = ("N1", "N2", "N3", "REM")
 # Orden clínico del hipnograma, de arriba hacia abajo.
 ORDEN_HIPNOGRAMA = ("W", "REM", "N1", "N2", "N3")
+
+# Claves para ubicar señales por nombre cuando llegan en un orden variable.
+_CLAVES_POSICION = {
+    "EEG Fpz-Cz": "fpz-cz",
+    "EEG Pz-Oz": "pz-oz",
+    "EOG horizontal": "eog",
+    "EMG submental": "emg",
+}
 
 
 # --------------------------------------------------------------------------
@@ -90,6 +99,80 @@ def bloques_secuencia(n_epocas: int, largo: int) -> List[Tuple[int, int, int]]:
     return bloques
 
 
+def preparar_entrada(
+    epocas: np.ndarray,
+    nombres_canales: Sequence[str],
+    posiciones: Sequence[str] = POSICIONES_TINYSLEEPNET,
+    con_presencia: bool = True,
+) -> Tuple[np.ndarray, Tuple[bool, ...]]:
+    """Mapea épocas al orden fijo del modelo y marca qué señales llegaron.
+
+    ``epocas`` tiene forma (épocas, canales recibidos, muestras). Los canales
+    pueden venir en cualquier orden. La salida queda en el orden de
+    ``posiciones``; las señales ausentes se rellenan con ceros y, cuando
+    ``con_presencia`` es True, se agregan al final sus máscaras 0/1.
+
+    Devuelve (entrada, presencia_por_posición). No remuestrea ni convierte
+    unidades: la señal debe llegar ya preparada en la frecuencia y unidad del
+    modelo.
+    """
+
+    x = np.asarray(epocas, dtype=np.float32)
+    if x.ndim != 3 or x.shape[1] != len(nombres_canales):
+        raise ValueError(
+            "epocas debe tener forma (n_epocas, n_canales, muestras), "
+            f"con n_canales = {len(nombres_canales)}; llegó {x.shape}."
+        )
+    if not np.isfinite(x).all():
+        raise ValueError("Las épocas contienen valores no finitos.")
+    if len(set(posiciones)) != len(posiciones):
+        raise ValueError("Las posiciones del modelo deben ser únicas.")
+
+    completo = np.zeros(
+        (x.shape[0], len(posiciones), x.shape[2]),
+        dtype=np.float32,
+    )
+    presentes = np.zeros(len(posiciones), dtype=bool)
+    claves = [
+        _CLAVES_POSICION.get(posicion, posicion.casefold())
+        for posicion in posiciones
+    ]
+
+    for indice_entrada, nombre in enumerate(nombres_canales):
+        nombre_normalizado = nombre.casefold()
+        coincide = [
+            indice
+            for indice, clave in enumerate(claves)
+            if clave in nombre_normalizado
+        ]
+        if len(coincide) != 1:
+            raise ValueError(
+                f"No reconozco el canal '{nombre}'. Posiciones válidas: {list(posiciones)}."
+            )
+        indice_posicion = coincide[0]
+        if presentes[indice_posicion]:
+            raise ValueError(f"El canal '{posiciones[indice_posicion]}' llegó repetido.")
+        completo[:, indice_posicion, :] = x[:, indice_entrada, :]
+        presentes[indice_posicion] = True
+
+    if not any(
+        presentes[indice]
+        for indice, posicion in enumerate(posiciones)
+        if posicion in CANALES_EEG
+    ):
+        raise ValueError("Se necesita al menos un EEG (Fpz-Cz o Pz-Oz).")
+
+    if not con_presencia:
+        return completo, tuple(bool(presente) for presente in presentes)
+
+    mascara = np.broadcast_to(
+        presentes[None, :, None],
+        (x.shape[0], len(posiciones), x.shape[2]),
+    ).astype(np.float32, copy=False)
+    entrada = np.concatenate([completo * mascara, mascara], axis=1)
+    return entrada, tuple(bool(presente) for presente in presentes)
+
+
 def construir_bloque(
     senales: Dict[str, np.ndarray],
     canales_usados: Sequence[str],
@@ -106,14 +189,20 @@ def construir_bloque(
     """
 
     n = fin - inicio
-    n_canales = len(canales_modelo) * (2 if con_presencia else 1)
-    bloque = np.zeros((n, n_canales, muestras_por_epoca), dtype=np.float32)
     a, b = inicio * muestras_por_epoca, fin * muestras_por_epoca
-    for posicion, canal in enumerate(canales_modelo):
-        if canal in canales_usados:
-            bloque[:, posicion, :] = senales[canal][a:b].reshape(n, muestras_por_epoca)
-            if con_presencia:
-                bloque[:, len(canales_modelo) + posicion, :] = 1.0
+    canales_recibidos = [canal for canal in canales_usados if canal in canales_modelo]
+    if not canales_recibidos:
+        raise ValueError("Se necesita al menos un canal compatible con el modelo.")
+    epocas = np.stack(
+        [senales[canal][a:b].reshape(n, muestras_por_epoca) for canal in canales_recibidos],
+        axis=1,
+    )
+    bloque, _presentes = preparar_entrada(
+        epocas,
+        canales_recibidos,
+        canales_modelo,
+        con_presencia=con_presencia,
+    )
     return bloque
 
 
