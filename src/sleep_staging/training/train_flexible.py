@@ -42,12 +42,29 @@ from sleep_staging.models.tinysleepnet import (  # noqa: E402
 )
 from sleep_staging.training import train_tinysleepnet as base  # noqa: E402
 from sleep_staging.training.canales_flexibles import (  # noqa: E402
+    POSICIONES,
+    POSICIONES_EMG,
     Combinacion,
     build_flexible_dataloader,
     combinacion_por_nombre,
     combinaciones_validas,
     n_canales_entrada,
 )
+
+
+def _contexto(emg: Optional[str]):
+    """
+    emg=None  -> modelo flexible de 3 senales de 100 Hz (6 combinaciones).
+    emg='mlp' o 'conv' -> TinySleepNetEMG con el EMG en una rama aparte (12 combinaciones).
+    Devuelve (posiciones, funcion de carga, constructor del modelo, sufijo del nombre del run).
+    """
+    if emg is None:
+        return POSICIONES, load_npz_recordings, (lambda cfg: TinySleepNet(cfg)), ""
+    from sleep_staging.models.tinysleepnet_emg import RAMAS, TinySleepNetEMG
+    from sleep_staging.training.emg_datos import cargar_con_emg
+    if emg not in RAMAS:
+        raise ValueError(f"emg debe ser None o una de {RAMAS}; llego '{emg}'.")
+    return POSICIONES_EMG, cargar_con_emg, (lambda cfg: TinySleepNetEMG(cfg, rama=emg)), f"_emg_{emg}"
 
 
 def _json_default(o):
@@ -66,26 +83,28 @@ def entrenar_pliegue(
     combos_val: Sequence[Combinacion],
     max_epochs: int,
     patience: int,
+    emg: Optional[str] = None,
 ) -> Dict:
+    posiciones, cargar, construir_modelo, _ = _contexto(emg)
     t_pliegue = time.time()
-    train_recs = load_npz_recordings(
+    train_recs = cargar(
         subject_codes=list(train_codes), max_epochs_per_recording=base.MAX_EPOCHS_PER_RECORDING)
-    val_recs = load_npz_recordings(
+    val_recs = cargar(
         subject_codes=list(val_codes), max_epochs_per_recording=base.MAX_EPOCHS_PER_RECORDING)
     t_carga = time.time() - t_pliegue
 
     class_weights = compute_class_weights(train_recs)  # SOLO desde el train del pliegue
-    train_loader = build_flexible_dataloader(train_recs, combos_train, shuffle=True)
+    train_loader = build_flexible_dataloader(train_recs, combos_train, shuffle=True, posiciones=posiciones)
     val_loaders = {
-        nombre: build_flexible_dataloader(val_recs, [(nombre, presentes)], shuffle=False)
+        nombre: build_flexible_dataloader(val_recs, [(nombre, presentes)], shuffle=False, posiciones=posiciones)
         for nombre, presentes in combos_val
     }
 
     config = TinySleepNetConfig(
         use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights,
-        input_channels=n_canales_entrada(),
+        input_channels=n_canales_entrada(posiciones),
     )
-    model = TinySleepNet(config).to(base.DEVICE)
+    model = construir_modelo(config).to(base.DEVICE)
     criterion = build_class_weighted_loss(class_weights, device=base.DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=base.LEARNING_RATE, betas=base.ADAM_BETAS)
 
@@ -165,19 +184,24 @@ def run_cv_flexible(
     max_epochs: Optional[int] = None,
     pliegues: Optional[Sequence[int]] = None,
     paciencia: Optional[int] = None,
+    emg: Optional[str] = None,
 ) -> Dict:
     """
     control=None  -> modelo flexible, entrenado y validado con todas las combinaciones.
     control="eeg_fpz_cz" (u otra) -> modelo de control con una sola combinacion.
     pliegues: lista de pliegues a correr (por defecto todos).
+    emg: None (3 senales) o 'mlp' / 'conv' (modelo con la rama EMG; 12 combinaciones).
     """
+    if emg is not None and control is not None:
+        raise ValueError("Los modelos de control no usan EMG: no combines --control con --emg.")
+    posiciones, _, _, sufijo = _contexto(emg)
     base.set_seed(base.CONFIG["seed"])
     max_epochs = max_epochs or base.MAX_EPOCHS
     patience = paciencia or base.EARLY_STOPPING_PATIENCE
 
     if control is None:
-        combos = combinaciones_validas()
-        nombre_run = "flexible"
+        combos = combinaciones_validas(posiciones)
+        nombre_run = "flexible" + sufijo
     else:
         combos = [combinacion_por_nombre(control)]
         nombre_run = f"control_{control}"
@@ -196,7 +220,7 @@ def run_cv_flexible(
     for k in a_correr:
         fold_train, fold_val = folds[k]
         print(f"\n=== PLIEGUE {k} ===")
-        resultado = entrenar_pliegue(k, fold_train, fold_val, combos, combos, max_epochs, patience)
+        resultado = entrenar_pliegue(k, fold_train, fold_val, combos, combos, max_epochs, patience, emg=emg)
         with open(salida_dir / f"{nombre_run}_pliegue{k}.json", "w", encoding="utf-8") as f:
             json.dump(resultado, f, indent=2, default=_json_default)
         print(f"  [pliegue {k}] listo en {resultado['segundos_pliegue'] / 60:.1f} min | "
@@ -231,6 +255,7 @@ def run_final_flexible(
     control: Optional[str] = None,
     salida: str = "resultados_flexible",
     n_epocas: Optional[int] = None,
+    emg: Optional[str] = None,
 ) -> Dict:
     """
     Modelo final: entrena con TODOS los sujetos de train (los mismos que usa la CV; el test
@@ -241,8 +266,11 @@ def run_final_flexible(
     No hay metrica de rendimiento aqui: el rendimiento del modelo es el de la CV.
     """
     base.set_seed(base.CONFIG["seed"])
+    if emg is not None and control is not None:
+        raise ValueError("Los modelos de control no usan EMG: no combines --control con --emg.")
+    posiciones, cargar, construir_modelo, sufijo = _contexto(emg)
     if control is None:
-        combos, nombre_run = combinaciones_validas(), "flexible"
+        combos, nombre_run = combinaciones_validas(posiciones), "flexible" + sufijo
     else:
         combos, nombre_run = [combinacion_por_nombre(control)], f"control_{control}"
     n_epocas = n_epocas or epocas_desde_cv(salida, nombre_run)
@@ -252,16 +280,16 @@ def run_final_flexible(
     train_codes, _ = get_train_test_subject_codes()
 
     t0 = time.time()
-    recs = load_npz_recordings(
+    recs = cargar(
         subject_codes=list(train_codes), max_epochs_per_recording=base.MAX_EPOCHS_PER_RECORDING)
     class_weights = compute_class_weights(recs)
-    loader = build_flexible_dataloader(recs, combos, shuffle=True)
+    loader = build_flexible_dataloader(recs, combos, shuffle=True, posiciones=posiciones)
 
     config = TinySleepNetConfig(
         use_rnn=True, seq_length=DEFAULT_SEQ_LENGTH, class_weights=class_weights,
-        input_channels=n_canales_entrada(),
+        input_channels=n_canales_entrada(posiciones),
     )
-    model = TinySleepNet(config).to(base.DEVICE)
+    model = construir_modelo(config).to(base.DEVICE)
     criterion = build_class_weighted_loss(class_weights, device=base.DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=base.LEARNING_RATE, betas=base.ADAM_BETAS)
 
@@ -286,7 +314,8 @@ def run_final_flexible(
         "n_epocas": n_epocas,
         "n_grabaciones": len(recs),
         "combinaciones": [c[0] for c in combos],
-        "n_canales_entrada": n_canales_entrada(),
+        "n_canales_entrada": n_canales_entrada(posiciones),
+        "emg": emg,   # None, 'mlp' o 'conv': decide la clase del modelo al cargar los pesos
         "seq_length": DEFAULT_SEQ_LENGTH,
         "clases": ["W", "N1", "N2", "N3", "REM"],
         "class_weights": class_weights,

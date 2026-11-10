@@ -44,6 +44,10 @@ from data.dataset import (  # noqa: E402
 # 3 canales (scripts/generar_3canales.py). No cambiarlo sin regenerar los datos.
 POSICIONES: List[str] = ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]
 POSICIONES_EEG: List[str] = ["EEG Fpz-Cz", "EEG Pz-Oz"]
+# Con el EMG submental como cuarta posicion (modelo TinySleepNetEMG). El EMG viene a
+# 1 Hz (30 valores por epoca): en el tensor viaja repetido REPETIR_EMG veces.
+POSICIONES_EMG: List[str] = POSICIONES + ["EMG submental"]
+REPETIR_EMG = 100   # 30 valores x 100 = 3000 muestras
 
 Combinacion = Tuple[str, Tuple[bool, ...]]  # (nombre, presente por posicion)
 
@@ -106,6 +110,7 @@ def preparar_entrada(
     epocas,
     nombres_canales: Sequence[str],
     posiciones: Sequence[str] = POSICIONES,
+    emg=None,
 ) -> Tuple[torch.Tensor, Tuple[bool, ...]]:
     """
     Para la API: arma la entrada del modelo flexible a partir de lo que llega.
@@ -116,6 +121,11 @@ def preparar_entrada(
     Cada senal va a su posicion fija; las que no llegan quedan en cero con marca 0.
     Falla con un mensaje claro si hay un canal desconocido o repetido, si no
     hay ningun EEG o si el numero de nombres no coincide con los datos.
+
+    EMG (solo con el modelo TinySleepNetEMG, posiciones=POSICIONES_EMG): el EMG
+    llega a 1 Hz, asi que NO va en `epocas` sino en `emg`, con forma (n_epocas, 30);
+    se repite 100 veces para tener 3000 muestras. Con emg=None el EMG queda
+    ausente (ceros y marca 0). Con posiciones=POSICIONES, `emg` debe ser None.
 
     Ojo: la salida es por epoca. El modelo espera secuencias de 15 epocas
     consecutivas (seq_length), asi que quien llame debe agruparlas de a 15 antes
@@ -130,11 +140,15 @@ def preparar_entrada(
         )
     completo = torch.zeros(x.shape[0], len(posiciones), x.shape[2], dtype=x.dtype)
     presentes = [False] * len(posiciones)
+    pos_emg = posiciones.index("EMG submental") if "EMG submental" in posiciones else None
     for i, nombre in enumerate(nombres_canales):
         coincide = [
             k for k, pos in enumerate(posiciones)
             if _CLAVES_POSICION.get(pos, pos.lower()) in nombre.lower()
         ]
+        if coincide and coincide[0] == pos_emg:
+            raise ValueError("El EMG llega a 1 Hz (30 valores por epoca): pasalo con el argumento "
+                             "emg=(n_epocas, 30), no dentro de `epocas`.")
         if len(coincide) != 1:
             raise ValueError(f"No reconozco el canal '{nombre}'. Posiciones validas: {list(posiciones)}.")
         k = coincide[0]
@@ -142,6 +156,14 @@ def preparar_entrada(
             raise ValueError(f"El canal '{posiciones[k]}' llego repetido.")
         completo[:, k] = x[:, i]
         presentes[k] = True
+    if emg is not None:
+        if pos_emg is None:
+            raise ValueError("Llego `emg`, pero `posiciones` no incluye el EMG (usa POSICIONES_EMG).")
+        e = torch.as_tensor(emg, dtype=torch.float32)
+        if e.ndim != 2 or e.shape != (x.shape[0], 30):
+            raise ValueError(f"emg debe tener forma (n_epocas, 30) = {(x.shape[0], 30)}; llego {tuple(e.shape)}.")
+        completo[:, pos_emg] = e.repeat_interleave(REPETIR_EMG, dim=-1)
+        presentes[pos_emg] = True
     if not any(presentes[k] for k, pos in enumerate(posiciones) if pos in POSICIONES_EEG):
         raise ValueError("Se necesita al menos un EEG (EEG Fpz-Cz o EEG Pz-Oz).")
     return aplicar_combinacion(completo, presentes), tuple(presentes)
@@ -190,9 +212,11 @@ def build_flexible_dataloader(
     seq_length: int = DEFAULT_SEQ_LENGTH,
     batch_size: int = DEFAULT_BATCH_SIZE,
     shuffle: bool = True,
+    posiciones: Sequence[str] = POSICIONES,
 ) -> DataLoader:
     """Igual que build_dataloader de dataset.py, pero con combinaciones de canales."""
-    dataset = FlexibleSequenceDataset(recordings, combinaciones, seq_length=seq_length)
+    dataset = FlexibleSequenceDataset(recordings, combinaciones, seq_length=seq_length,
+                                      posiciones=posiciones)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=False)
 
 
