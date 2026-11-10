@@ -30,7 +30,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig
+from .tinysleepnet import TinySleepNet, TinySleepNetConfig
 
 REPETIR = 100                      # 30 valores -> 3000 muestras
 N_VALORES = 30
