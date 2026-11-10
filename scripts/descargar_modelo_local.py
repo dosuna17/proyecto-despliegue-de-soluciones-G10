@@ -6,8 +6,13 @@ import argparse
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
+
+# Permite ejecutar el script directamente con
+# `python scripts/descargar_modelo_local.py` desde la raíz del repositorio.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import mlflow
 from mlflow.tracking import MlflowClient
