@@ -9,6 +9,19 @@ la densidad espectral de potencia (PSD) de cada época de 30s:
     - Razones entre bandas (delta/alpha, theta/alpha).
     - Spectral Edge Frequency al 95% (SEF95).
     - Entropía espectral (Shannon, normalizada).
+
+En los canales EOG se agregan además features en el dominio del tiempo
+(ver docs/propuesta_features_eog.md):
+    - Amplitud pico a pico robusta (percentil 99 - percentil 1).
+    - Movilidad de Hjorth.
+    - Conteo de sacadas (picos de velocidad sobre un umbral fijo).
+    - Curtosis.
+
+Los canales EMG no admiten análisis por bandas (ver EMG_NATIVE_SFREQ), así
+que en lugar de las features espectrales se calculan:
+    - Media y desviación estándar de la época.
+    - Percentiles 10 y 90 de la época.
+    - Pendiente de la recta ajustada dentro de la época (µV/s).
 """
 from __future__ import annotations
 
@@ -16,7 +29,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 import numpy as np
-from scipy.signal import welch
+from scipy.signal import find_peaks, welch
+from scipy.stats import kurtosis
 from pathlib import Path
 import sys
 
@@ -32,13 +46,34 @@ _trapz = getattr(np, "trapezoid", None) or np.trapz
 FREQ_BANDS: Dict[str, Tuple[float, float]] = {
     "delta": (0.5, 4.0),
     "theta": (4.0, 8.0),
-    "alpha": (8.0, 13.0),
+    "alpha": (8.0, 12.0),
     "sigma": (12.0, 16.0), 
-    "beta": (13.0, 30.0),
+    "beta": (16.0, 30.0),
 }
 
 # Rango total sobre el que se calcula la potencia de referencia (relativa, SEF, entropía)
 TOTAL_BAND: Tuple[float, float] = (0.5, 30.0)
+
+# Los canales cuyo nombre empieza así suman las features de tiempo del EOG.
+EOG_CHANNEL_PREFIX = "EOG"
+
+# Sacadas: picos de |derivada| (µV/s) sobre el umbral, separados al menos
+# SACCADE_MIN_INTERVAL_SEC. La derivada se calcula sobre la señal suavizada
+# con una media móvil de SACCADE_SMOOTH_SEC para no contar ruido muscular.
+# El umbral es fijo (no se normaliza por grabación) para que cada época se
+# calcule sola. Umbral y suavizado se calibraron con sujetos de train
+# (mejor AUC de REM frente a N1+N2) en notebooks/11_eog_features_validation.ipynb.
+SACCADE_VELOCITY_UV_S = 750.0
+SACCADE_MIN_INTERVAL_SEC = 0.3
+SACCADE_SMOOTH_SEC = 0.1
+
+# Los canales cuyo nombre empieza así usan las features de EMG en vez de las espectrales.
+EMG_CHANNEL_PREFIX = "EMG"
+
+# En Sleep Cassette el EMG submental es una envolvente RMS guardada a 1 Hz. MNE
+# la remuestrea (FFT) a 100 Hz al cargarla junto a los demás canales, lo que
+# agrega oscilaciones entre muestras; las de la grilla de 1 Hz son las originales.
+EMG_NATIVE_SFREQ = 1.0
 
 
 @dataclass
@@ -111,16 +146,88 @@ def _epoch_channel_features(signal: np.ndarray, sfreq: float) -> Dict[str, float
     feats["theta_alpha_ratio"] = (
         feats["theta_power_abs"] / feats["alpha_power_abs"] if feats["alpha_power_abs"] > 0 else 0.0
     )
-    feats["sef95"] = _spectral_edge_freq(freqs, psd, edge=0.95)
-    feats["spectral_entropy"] = _spectral_entropy(psd)
+    
+    band_mask = (freqs >= TOTAL_BAND[0]) & (freqs < TOTAL_BAND[1])
+    feats["sef95"] = _spectral_edge_freq(freqs[band_mask], psd[band_mask], edge=0.95)
+    feats["spectral_entropy"] = _spectral_entropy(psd[band_mask])
 
     return feats
+
+
+def eog_p2p_robust(signal: np.ndarray) -> float:
+    """Amplitud pico a pico sin los extremos: percentil 99 - percentil 1."""
+    p1, p99 = np.percentile(signal, [1, 99])
+    return float(p99 - p1)
+
+
+def eog_hjorth_mobility(signal: np.ndarray, sfreq: float) -> float:
+    """Movilidad de Hjorth, sqrt(Var(x') / Var(x)), con x' en unidades/s."""
+    var_x = np.var(signal)
+    if var_x <= 0:
+        return np.nan
+    derivative = np.diff(signal) * sfreq
+    return float(np.sqrt(np.var(derivative) / var_x))
+
+
+def eog_saccade_count(
+    signal: np.ndarray,
+    sfreq: float,
+    threshold: float = SACCADE_VELOCITY_UV_S,
+    smooth_sec: float = SACCADE_SMOOTH_SEC,
+) -> float:
+    """Cantidad de picos de velocidad (|x'|, µV/s) que superan `threshold`."""
+    smooth_len = max(round(smooth_sec * sfreq), 1)
+    if smooth_len > 1:
+        # "valid" evita el relleno con ceros de los bordes, que crearía saltos falsos
+        signal = np.convolve(signal, np.ones(smooth_len) / smooth_len, mode="valid")
+    velocity = np.abs(np.diff(signal)) * sfreq
+    distance = max(round(SACCADE_MIN_INTERVAL_SEC * sfreq), 1)
+    peaks, _ = find_peaks(velocity, height=threshold, distance=distance)
+    return float(len(peaks))
+
+
+def eog_kurtosis(signal: np.ndarray) -> float:
+    """Curtosis de Fisher (0 para una señal gaussiana)."""
+    if np.std(signal) <= 0:
+        return np.nan
+    return float(kurtosis(signal, fisher=True))
+
+
+def _epoch_eog_features(signal: np.ndarray, sfreq: float) -> Dict[str, float]:
+    """Features espectrales de un canal EOG más sus features en el dominio del tiempo."""
+    feats = _epoch_channel_features(signal, sfreq)
+    feats["p2p_robust"] = eog_p2p_robust(signal)
+    feats["hjorth_mobility"] = eog_hjorth_mobility(signal, sfreq)
+    feats["saccade_count"] = eog_saccade_count(signal, sfreq)
+    feats["kurtosis"] = eog_kurtosis(signal)
+    return feats
+
+
+def _epoch_emg_features(signal: np.ndarray, sfreq: float) -> Dict[str, float]:
+    """
+    Calcula las features de EMG para una sola señal 1D (un canal, una época),
+    usando solo las muestras originales a EMG_NATIVE_SFREQ. Devuelve un
+    diccionario {nombre_feature: valor}.
+    """
+    step = max(int(round(sfreq / EMG_NATIVE_SFREQ)), 1)
+    samples = signal[::step]
+    time_sec = np.arange(len(samples)) * step / sfreq
+    p10, p90 = np.percentile(samples, [10, 90])
+
+    return {
+        "mean": float(np.mean(samples)),
+        "std": float(np.std(samples)),
+        "p10": float(p10),
+        "p90": float(p90),
+        "slope": float(np.polyfit(time_sec, samples, 1)[0]),
+    }
 
 
 def extract_features(dataset: EpochDataset) -> FeatureDataset:
     """
     Calcula las features espectrales de cada época de un EpochDataset,
-    para cada canal presente. Si hay más de un canal, los nombres de
+    para cada canal presente: espectrales en EEG, espectrales y de tiempo
+    en EOG, y estadísticas en EMG. Si hay más de un canal, los nombres de
     feature se prefijan con el nombre del canal (p. ej.
     'EEG_Fpz-Cz__delta_power_rel') para no mezclarlos.
     """
@@ -134,7 +241,12 @@ def extract_features(dataset: EpochDataset) -> FeatureDataset:
         for ch_idx in range(n_channels):
             ch_name = dataset.channel_names[ch_idx].replace(" ", "_")
             signal = dataset.X[epoch_idx, ch_idx, :]
-            feats = _epoch_channel_features(signal, dataset.sfreq)
+            if ch_name.startswith(EMG_CHANNEL_PREFIX):
+                feats = _epoch_emg_features(signal, dataset.sfreq)
+            elif ch_name.startswith(EOG_CHANNEL_PREFIX):
+                feats = _epoch_eog_features(signal, dataset.sfreq)
+            else:
+                feats = _epoch_channel_features(signal, dataset.sfreq)
             for feat_name, value in feats.items():
                 row.append(value)
                 if epoch_idx == 0:  # los nombres son iguales para todas las épocas

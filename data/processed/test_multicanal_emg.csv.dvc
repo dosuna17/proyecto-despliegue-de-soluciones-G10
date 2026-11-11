@@ -1,0 +1,5 @@
+outs:
+- md5: fe27a2553bebb7ce39d2ab0a64a3765f
+  size: 181263890
+  hash: md5
+  path: test_multicanal_emg.csv
