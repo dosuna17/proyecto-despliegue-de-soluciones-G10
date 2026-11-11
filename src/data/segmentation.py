@@ -33,9 +33,6 @@ import mne
 
 EPOCH_LEN_SEC = 30.0
 
-# Descripción cruda del hypnograma -> clase final (igual que MAPEO_CLASES
-# en 01_EDA; los estadíos 3 y 4 de R&K se fusionan en N3). Cualquier
-# descripción que no esté aquí se descarta siempre.
 _RAW_TO_CLASS = {
     "Sleep stage W": "W",
     "Sleep stage 1": "N1",
@@ -47,18 +44,9 @@ _RAW_TO_CLASS = {
     "Sleep stage ?": "?",
 }
 
-# Orden canonico de clases usado por datasets, metricas, graficas y modelos.
-# Es también el conjunto de clases que conserva extract_epochs por defecto.
 CLASS_NAMES = ["W", "N1", "N2", "N3", "REM"]
-
-# Todas las clases que se pueden pedir en extract_epochs(classes=...).
 ALL_CLASS_NAMES = CLASS_NAMES + ["M", "?"]
-
-# Estadíos de sueño real, usados para ubicar el inicio/fin del sueño.
 SLEEP_CLASS_NAMES = ["N1", "N2", "N3", "REM"]
-
-# Mapeos auxiliares para compatibilidad con notebooks/artefactos antiguos.
-# M y ? quedan al final para no cambiar los enteros 0-4 de las 5 clases.
 CLASS_TO_INT: Dict[str, int] = {name: idx for idx, name in enumerate(ALL_CLASS_NAMES)}
 INT_TO_CLASS: Dict[int, str] = {v: k for k, v in CLASS_TO_INT.items()}
 
@@ -218,8 +206,6 @@ def extract_epochs(
     epochs = annotations_to_epochs(annotations, epoch_len, classes)
 
     raw.load_data(verbose=False)
-    # MNE guarda las señales en voltios (SI); el estándar de trabajo en
-    # EEG/PSG es microvoltios (µV), así que por defecto se piden en µV.
     signal_unit = "uV" if scale_to_uv else "V"
     data = raw.get_data(units=signal_unit).astype(dtype)  # (n_channels, n_samples)
 
@@ -227,8 +213,6 @@ def extract_epochs(
     dropped = 0
 
     for start, class_name in epochs:
-        # Épocas del relleno final del hypnograma (el '?' que completa el
-        # archivo hasta 24 h) caen fuera de la señal: no cuentan como descartadas
         if start >= total_duration:
             continue
         if class_name is None:
@@ -327,16 +311,6 @@ def concatenate_datasets_by_split(
     Filtra una lista de EpochDataset (uno por sujeto/noche) quedándose solo
     con los que pertenecen a `target_split` ("train" o "test"), y los
     concatena con concatenate_datasets.
-
-    IMPORTANTE: el nombre de archivo / recording_id NO contiene esta
-    información -- el split se decide aparte (ver split_subjects.ipynb,
-    que genera SC-subjects-split.xlsx) y debe cruzarse explícitamente por
-    subject_code. `subject_to_split` es ese mapeo, típicamente construido así:
-
-        import pandas as pd
-        split_df = pd.read_excel("SC-subjects-split.xlsx")
-        split_df["subject_code"] = split_df["subject"].astype(str).str.zfill(2)
-        subject_to_split = dict(zip(split_df["subject_code"], split_df["split"]))
     """
     selected = [ds for ds in datasets if subject_to_split.get(ds.subject_code) == target_split]
     if not selected:
@@ -363,8 +337,6 @@ def trim_wake_edges(dataset: EpochDataset, buffer_epochs: int = 60) -> EpochData
     Debe aplicarse por grabación individual, ANTES de concatenar varios
     sujetos -- los límites de recorte son específicos de cada noche.
     """
-    # Solo N1/N2/N3/REM marcan sueño real: M o ? (si se conservaron) no
-    # deben mover los límites del recorte.
     labels = np.array([label_to_class_name(label) for label in dataset.y])
     sleep_idx = np.where(np.isin(labels, SLEEP_CLASS_NAMES))[0]
 
@@ -423,7 +395,6 @@ def class_distribution(dataset: EpochDataset) -> Dict[str, int]:
 
 
 if __name__ == "__main__":
-    # Prueba rápida manual encadenando con loader.py
     import sys
     from loader import load_subject
 

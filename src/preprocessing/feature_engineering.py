@@ -10,8 +10,7 @@ la densidad espectral de potencia (PSD) de cada época de 30s:
     - Spectral Edge Frequency al 95% (SEF95).
     - Entropía espectral (Shannon, normalizada).
 
-En los canales EOG se agregan además features en el dominio del tiempo
-(ver docs/propuesta_features_eog.md):
+En los canales EOG se agregan además features en el dominio del tiempo:
     - Amplitud pico a pico robusta (percentil 99 - percentil 1).
     - Movilidad de Hjorth.
     - Conteo de sacadas (picos de velocidad sobre un umbral fijo).
@@ -39,10 +38,8 @@ sys.path.insert(0, str(project_root))
 
 from src.data.segmentation import EpochDataset
 
-# numpy >= 2.0 renombró trapz -> trapezoid; se soporta ambos casos.
 _trapz = getattr(np, "trapezoid", None) or np.trapz
 
-# Bandas clásicas de EEG (Hz): nombre -> (f_min, f_max)
 FREQ_BANDS: Dict[str, Tuple[float, float]] = {
     "delta": (0.5, 4.0),
     "theta": (4.0, 8.0),
@@ -51,28 +48,13 @@ FREQ_BANDS: Dict[str, Tuple[float, float]] = {
     "beta": (16.0, 30.0),
 }
 
-# Rango total sobre el que se calcula la potencia de referencia (relativa, SEF, entropía)
+
 TOTAL_BAND: Tuple[float, float] = (0.5, 30.0)
-
-# Los canales cuyo nombre empieza así suman las features de tiempo del EOG.
 EOG_CHANNEL_PREFIX = "EOG"
-
-# Sacadas: picos de |derivada| (µV/s) sobre el umbral, separados al menos
-# SACCADE_MIN_INTERVAL_SEC. La derivada se calcula sobre la señal suavizada
-# con una media móvil de SACCADE_SMOOTH_SEC para no contar ruido muscular.
-# El umbral es fijo (no se normaliza por grabación) para que cada época se
-# calcule sola. Umbral y suavizado se calibraron con sujetos de train
-# (mejor AUC de REM frente a N1+N2) en notebooks/11_eog_features_validation.ipynb.
 SACCADE_VELOCITY_UV_S = 750.0
 SACCADE_MIN_INTERVAL_SEC = 0.3
 SACCADE_SMOOTH_SEC = 0.1
-
-# Los canales cuyo nombre empieza así usan las features de EMG en vez de las espectrales.
 EMG_CHANNEL_PREFIX = "EMG"
-
-# En Sleep Cassette el EMG submental es una envolvente RMS guardada a 1 Hz. MNE
-# la remuestrea (FFT) a 100 Hz al cargarla junto a los demás canales, lo que
-# agrega oscilaciones entre muestras; las de la grilla de 1 Hz son las originales.
 EMG_NATIVE_SFREQ = 1.0
 
 
@@ -86,11 +68,11 @@ class FeatureDataset:
     """
     recording_id: str
     subject_code: str
-    X: np.ndarray               # (n_epochs, n_features)
-    y: np.ndarray                # (n_epochs,) — idéntico al del EpochDataset de origen
+    X: np.ndarray
+    y: np.ndarray
     feature_names: List[str]
-    recording_ids: np.ndarray    # (n_epochs,) str
-    subject_codes: np.ndarray    # (n_epochs,) str
+    recording_ids: np.ndarray
+    subject_codes: np.ndarray
 
 
 def _band_power(freqs: np.ndarray, psd: np.ndarray, band: Tuple[float, float]) -> float:
@@ -178,7 +160,6 @@ def eog_saccade_count(
     """Cantidad de picos de velocidad (|x'|, µV/s) que superan `threshold`."""
     smooth_len = max(round(smooth_sec * sfreq), 1)
     if smooth_len > 1:
-        # "valid" evita el relleno con ceros de los bordes, que crearía saltos falsos
         signal = np.convolve(signal, np.ones(smooth_len) / smooth_len, mode="valid")
     velocity = np.abs(np.diff(signal)) * sfreq
     distance = max(round(SACCADE_MIN_INTERVAL_SEC * sfreq), 1)
@@ -249,7 +230,7 @@ def extract_features(dataset: EpochDataset) -> FeatureDataset:
                 feats = _epoch_channel_features(signal, dataset.sfreq)
             for feat_name, value in feats.items():
                 row.append(value)
-                if epoch_idx == 0:  # los nombres son iguales para todas las épocas
+                if epoch_idx == 0:
                     row_names.append(f"{ch_name}__{feat_name}")
         feature_rows.append(row)
         if epoch_idx == 0:
