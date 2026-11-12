@@ -15,12 +15,12 @@ Esquema de etiquetas (según especificación del proyecto):
     época no clasificable) y '?' (época no anotada).
 
     Este módulo:
-      1. Fusiona los estadíos '3' y '4' en una sola clase "N3".
-      2. Conserva solo las clases pedidas en `classes` (ver
-         extract_epochs). Por defecto son las 5 clases de sueño
-         W, N1, N2, N3, REM, es decir, se eliminan 'M' y '?'; se pueden
-         conservar pasándolas explícitamente. Cualquier otra etiqueta no
-         reconocida se descarta siempre.
+      1. Descarta cualquier anotación que no sea una de las 6 clases
+         R&K permitidas -> se eliminan 'M' y '?' (y cualquier otra
+         etiqueta no reconocida).
+      2. Fusiona los estadíos '3' y '4' en una sola clase "N3".
+      3. Devuelve las 5 clases resultantes como nombres explícitos:
+             W, N1, N2, N3, REM
 
 """
 from __future__ import annotations
@@ -33,6 +33,13 @@ import mne
 
 EPOCH_LEN_SEC = 30.0
 
+# MNE lee las señales EDF en voltios; el estándar de trabajo en EEG/PSG
+# es microvoltios (µV), así que se reescala por defecto al extraer épocas.
+VOLTS_TO_MICROVOLTS = 1e6
+
+# Descripción cruda del hypnograma -> clase final (igual que MAPEO_CLASES
+# en 01_EDA; los estadíos 3 y 4 de R&K se fusionan en N3). Cualquier
+# descripción que no esté aquí se descarta siempre.
 _RAW_TO_CLASS = {
     "Sleep stage W": "W",
     "Sleep stage 1": "N1",
@@ -44,9 +51,18 @@ _RAW_TO_CLASS = {
     "Sleep stage ?": "?",
 }
 
+# Orden canonico de clases usado por datasets, metricas, graficas y modelos.
+# Es también el conjunto de clases que conserva extract_epochs por defecto.
 CLASS_NAMES = ["W", "N1", "N2", "N3", "REM"]
+
+# Todas las clases que se pueden pedir en extract_epochs(classes=...).
 ALL_CLASS_NAMES = CLASS_NAMES + ["M", "?"]
+
+# Estadíos de sueño real, usados para ubicar el inicio/fin del sueño.
 SLEEP_CLASS_NAMES = ["N1", "N2", "N3", "REM"]
+
+# Mapeos auxiliares para compatibilidad con notebooks/artefactos antiguos.
+# M y ? quedan al final para no cambiar los enteros 0-4 de las 5 clases.
 CLASS_TO_INT: Dict[str, int] = {name: idx for idx, name in enumerate(ALL_CLASS_NAMES)}
 INT_TO_CLASS: Dict[int, str] = {v: k for k, v in CLASS_TO_INT.items()}
 
@@ -87,7 +103,7 @@ class EpochDataset:
     subject_code: str      # sujeto persistente entre noches, p. ej. '00'
     night: str             # número de noche, p. ej. '1'
     X: np.ndarray          # (n_epochs, n_channels, n_samples_por_epoca)
-    y: np.ndarray          # (n_epochs,) nombres de clase (las pedidas en `classes`)
+    y: np.ndarray          # (n_epochs,) nombres de clase en CLASS_NAMES
     recording_ids: np.ndarray   # (n_epochs,) str — recording_id repetido, uno por época
     subject_codes: np.ndarray   # (n_epochs,) str — subject_code repetido, uno por época
     channel_names: List[str]
@@ -167,19 +183,13 @@ def extract_epochs(
     channel_picks: Optional[Sequence[str]] = None,
     scale_to_uv: bool = True,
     dtype: np.dtype = np.float32,
-    classes: Sequence[str] = CLASS_NAMES,
 ) -> EpochDataset:
     """
     Segmenta la señal continua de una grabación (sujeto/noche) en épocas
     de 30s a partir de los intervalos del hypnograma (ver
     `annotations_to_epochs`): cada intervalo se parte en épocas de 30s que
-    heredan su etiqueta. Se descarta toda época cuya etiqueta no esté en
-    `classes` o que se salga de la señal.
-
-    classes: clases a conservar, cualquier subconjunto de ALL_CLASS_NAMES
-    = [W, N1, N2, N3, REM, M, ?]. Por defecto CLASS_NAMES (las 5 clases
-    de sueño); p. ej. classes=CLASS_NAMES + ["M"] conserva también las
-    épocas de movimiento.
+    heredan su etiqueta. Se descarta toda época cuya etiqueta no sea una de
+    las 5 clases permitidas (W, N1, N2, N3, REM) o que se salga de la señal.
 
     channel_picks: lista opcional de nombres de canal a conservar
     (p. ej. ['EEG Fpz-Cz'] o ['EEG Fpz-Cz', 'EEG Pz-Oz']). Si es None,
@@ -203,16 +213,21 @@ def extract_epochs(
     total_duration = raw.n_times / sfreq
     samples_per_epoch = int(round(epoch_len * sfreq))
 
-    epochs = annotations_to_epochs(annotations, epoch_len, classes)
+    epochs = annotations_to_epochs(annotations, epoch_len)
 
     raw.load_data(verbose=False)
+    data = raw.get_data().astype(dtype)  # (n_channels, n_samples), en voltios
+
+    if scale_to_uv:
+        data = data * np.array(VOLTS_TO_MICROVOLTS, dtype=dtype)
     signal_unit = "uV" if scale_to_uv else "V"
-    data = raw.get_data(units=signal_unit).astype(dtype)  # (n_channels, n_samples)
 
     X_list, y_list = [], []
     dropped = 0
 
     for start, class_name in epochs:
+        # Épocas del relleno final del hypnograma (el '?' que completa el
+        # archivo hasta 24 h) caen fuera de la señal: no cuentan como descartadas
         if start >= total_duration:
             continue
         if class_name is None:
@@ -311,6 +326,16 @@ def concatenate_datasets_by_split(
     Filtra una lista de EpochDataset (uno por sujeto/noche) quedándose solo
     con los que pertenecen a `target_split` ("train" o "test"), y los
     concatena con concatenate_datasets.
+
+    IMPORTANTE: el nombre de archivo / recording_id NO contiene esta
+    información -- el split se decide aparte (ver split_subjects.ipynb,
+    que genera SC-subjects-split.xlsx) y debe cruzarse explícitamente por
+    subject_code. `subject_to_split` es ese mapeo, típicamente construido así:
+
+        import pandas as pd
+        split_df = pd.read_excel("SC-subjects-split.xlsx")
+        split_df["subject_code"] = split_df["subject"].astype(str).str.zfill(2)
+        subject_to_split = dict(zip(split_df["subject_code"], split_df["split"]))
     """
     selected = [ds for ds in datasets if subject_to_split.get(ds.subject_code) == target_split]
     if not selected:
@@ -337,17 +362,18 @@ def trim_wake_edges(dataset: EpochDataset, buffer_epochs: int = 60) -> EpochData
     Debe aplicarse por grabación individual, ANTES de concatenar varios
     sujetos -- los límites de recorte son específicos de cada noche.
     """
+    wake_label = "W"
     labels = np.array([label_to_class_name(label) for label in dataset.y])
-    sleep_idx = np.where(np.isin(labels, SLEEP_CLASS_NAMES))[0]
+    non_wake_idx = np.where(labels != wake_label)[0]
 
-    if len(sleep_idx) == 0:
+    if len(non_wake_idx) == 0:
         raise ValueError(
             f"La grabación {dataset.recording_id} no tiene ninguna época de sueño real "
-            f"(N1/N2/N3/REM) -- no se puede recortar."
+            f"(todo es W) -- no se puede recortar."
         )
 
-    first_sleep = sleep_idx.min()
-    last_sleep = sleep_idx.max()
+    first_sleep = non_wake_idx.min()
+    last_sleep = non_wake_idx.max()
     start = max(0, first_sleep - buffer_epochs)
     end = min(len(dataset.y), last_sleep + buffer_epochs + 1)
 
@@ -372,7 +398,7 @@ def label_to_class_name(label: Union[str, int, np.integer]) -> str:
     """Convierte una etiqueta nueva o antigua al nombre canonico de clase."""
 
     if isinstance(label, str):
-        if label not in ALL_CLASS_NAMES:
+        if label not in CLASS_NAMES:
             raise ValueError(f"Etiqueta desconocida: {label}")
         return label
 
@@ -383,18 +409,15 @@ def label_to_class_name(label: Union[str, int, np.integer]) -> str:
 
 
 def class_distribution(dataset: EpochDataset) -> Dict[str, int]:
-    """
-    Conteo de épocas por clase final, en formato legible. Siempre incluye
-    las 5 clases de CLASS_NAMES; M y ? aparecen solo si hay épocas de ellas.
-    """
+    """Conteo de épocas por clase final, en formato legible."""
     counts = {name: 0 for name in CLASS_NAMES}
     for label in dataset.y:
-        name = label_to_class_name(label)
-        counts[name] = counts.get(name, 0) + 1
+        counts[label_to_class_name(label)] += 1
     return counts
 
 
 if __name__ == "__main__":
+    # Prueba rápida manual encadenando con loader.py
     import sys
     from loader import load_subject
 
