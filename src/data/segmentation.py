@@ -218,11 +218,10 @@ def extract_epochs(
     epochs = annotations_to_epochs(annotations, epoch_len, classes)
 
     raw.load_data(verbose=False)
-    data = raw.get_data().astype(dtype)  # (n_channels, n_samples), en voltios
-
-    if scale_to_uv:
-        data = data * np.array(VOLTS_TO_MICROVOLTS, dtype=dtype)
+    # MNE guarda las señales en voltios (SI); el estándar de trabajo en
+    # EEG/PSG es microvoltios (µV), así que por defecto se piden en µV.
     signal_unit = "uV" if scale_to_uv else "V"
+    data = raw.get_data(units=signal_unit).astype(dtype)  # (n_channels, n_samples)
 
     X_list, y_list = [], []
     dropped = 0
