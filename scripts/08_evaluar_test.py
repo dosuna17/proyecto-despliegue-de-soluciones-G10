@@ -4,39 +4,58 @@ Evaluacion UNICA en el conjunto de test de los modelos finales del modelo flexib
 Modelos (todos ya entrenados, solo con sujetos de train; ver scripts/06_train_flexible.py):
     flexible                        flexible de 3 senales (6 combinaciones)
     flexible_emg_mlp                flexible con EMG en una rama aparte (12 combinaciones)
+    flexible_sin_lstm               ablacion: el flexible de 3 senales sin la LSTM (6 combinaciones)
     control_eeg_fpz_cz              controles: un modelo por combinacion
     control_eeg_pz_oz
     control_eeg_fpz_cz__eeg_pz_oz
     control_eeg_fpz_cz__eog_horizontal
+    control_eeg_fpz_cz__eeg_pz_oz__eog_horizontal__emg_submental   (control con las 4 senales)
 
 Para cada modelo y cada combinacion de senales:
     - exactitud, F1 macro, exactitud balanceada, kappa, F1 por etapa y matriz de confusion
     - intervalo de confianza del 95 % (bootstrap por sujeto) de F1 macro y kappa
+    - F1 macro y exactitud por persona (las dos noches de cada sujeto juntas): media, desviacion, min y max
     - curva cobertura vs exactitud segun la confianza (probabilidad maxima) de la prediccion
-      y el umbral de confianza mas bajo con exactitud aceptada >= 82.6 %
+    - umbrales de confianza FIJADOS CON LA VALIDACION (no con el test): ver abajo
     - probabilidades por epoca guardadas (.npz), para volver a calcular sin reentrenar
+
+Umbrales de confianza (objetivo: exactitud de las epocas aceptadas >= 82.6 %):
+    Se calculan ANTES de tocar el test, con las probabilidades de validacion que guarda la validacion
+    cruzada (<salida de 06>/probs_validacion/, argumento --probs-validacion). Para cada modelo:
+      - umbral por combinacion: el menor umbral cuya exactitud de aceptadas en validacion llega al objetivo;
+      - umbral global del modelo: igual, con las probabilidades de todas sus combinaciones juntas
+        (es el unico umbral que usaria un tablero).
+    El test solo comprueba cobertura y exactitud con esos umbrales ya fijados (IC95 por sujeto).
+    La curva completa y el menor umbral segun el test se guardan solo como referencia descriptiva
+    (su exactitud seria optimista porque se ajusta sobre los mismos datos).
+
+Epocas evaluadas: cada noche completa se parte en bloques de 15 epocas sin traslape desde la epoca 0 y se
+descarta el resto del final. rec_idx y epoca_idx en cada .npz permiten alinear otros modelos con estas mismas epocas.
 
 Modos:
     --modo prueba   (por defecto) usa 3 sujetos de TRAIN para comprobar que todo corre. No toca el test.
-    --modo test     usa los sujetos de test, solo con --confirmo-test-unico, y deja un archivo
-                    TEST_YA_EJECUTADO.json que impide repetir la evaluacion.
+    --modo test     usa los sujetos de test, solo con --confirmo-test-unico. Crea el candado
+                    TEST_YA_EJECUTADO.json AL EMPEZAR (estado "en curso", en una ruta fija fuera de --salida)
+                    y lo marca "completo" al terminar. Si se corta, se completa con --reanudar (reutiliza las
+                    predicciones ya guardadas, con los mismos pesos); no se puede repetir un test completo.
 
 Carpeta de modelos (--modelos): debe tener, para cada modelo, <run>_final.pth y <run>_final.json.
 
 Uso:
     python scripts/08_evaluar_test.py --modelos modelos_finales                       # prueba
-    python scripts/08_evaluar_test.py --modelos modelos_finales --modo test --confirmo-test-unico
+    python scripts/08_evaluar_test.py --modelos modelos_finales --probs-validacion res_flexible res_emg ...
+    python scripts/08_evaluar_test.py --modelos modelos_finales --modo test --confirmo-test-unico \\
+        --probs-validacion res_flexible res_emg res_controles
 
-Carpetas de datos: SLEEP_NPZ_DIR (3 canales) y SLEEP_EMG_DIR (EMG, solo para el modelo con EMG).
-
-Nota: el umbral de confianza se fija sobre el propio test, asi que su exactitud es optimista;
-hay que declararlo asi en el articulo.
+Carpetas de datos: SLEEP_NPZ_DIR (3 canales) y SLEEP_EMG_DIR (EMG, solo para los modelos con EMG).
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import os
+import re
 import subprocess
 import sys
 import time
@@ -59,27 +78,31 @@ from sleep_staging.training.canales_flexibles import (  # noqa: E402
     POSICIONES_EMG,
     FlexibleSequenceDataset,
     combinacion_por_nombre,
-    combinaciones_validas,
     n_canales_entrada,
 )
 
+CONTROL_4_SENALES = "control_eeg_fpz_cz__eeg_pz_oz__eog_horizontal__emg_submental"
 MODELOS = [
     "flexible",
     "flexible_emg_mlp",
+    "flexible_sin_lstm",
     "control_eeg_fpz_cz",
     "control_eeg_pz_oz",
     "control_eeg_fpz_cz__eeg_pz_oz",
     "control_eeg_fpz_cz__eog_horizontal",
+    CONTROL_4_SENALES,
 ]
 CLASES = base.CLASS_NAMES
-OBJETIVO_EXACTITUD = 0.826          # acuerdo entre expertos (Rosenberg & Van Hout 2013)
+OBJETIVO_EXACTITUD = 0.826          # acuerdo entre expertos (Rosenberg & Van Hout 2013); referencia aproximada (Sleep-EDF es R&K)
 N_BOOTSTRAP = 1000
 SEMILLA_BOOTSTRAP = 42
 UMBRALES = np.round(np.arange(0.0, 1.0, 0.01), 2)
+N_PLIEGUES = 5
+RUTA_CANDADO_POR_DEFECTO = os.environ.get("TEST_LOCK_PATH") or str(RAIZ / "TEST_YA_EJECUTADO.json")
 
 
 # ---------------------------------------------------------------------
-# Carga de modelos
+# Utilidades
 # ---------------------------------------------------------------------
 def md5(ruta: Path) -> str:
     h = hashlib.md5()
@@ -89,6 +112,22 @@ def md5(ruta: Path) -> str:
     return h.hexdigest()
 
 
+def escribir_json(ruta: Path, obj) -> None:
+    """Escritura atomica: nunca queda un candado a medias."""
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    tmp = ruta.with_name(ruta.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False)
+    tmp.replace(ruta)
+
+
+def fmt(x, dec: int = 3) -> str:
+    return "" if x is None else f"{x:.{dec}f}"
+
+
+# ---------------------------------------------------------------------
+# Carga de modelos
+# ---------------------------------------------------------------------
 def cargar_modelo(carpeta: Path, run: str):
     """Reconstruye el modelo desde su JSON y carga los pesos (estricto). Devuelve (modelo, info, posiciones)."""
     ruta_json, ruta_pth = carpeta / f"{run}_final.json", carpeta / f"{run}_final.pth"
@@ -96,14 +135,20 @@ def cargar_modelo(carpeta: Path, run: str):
         raise FileNotFoundError(f"Falta {ruta_json.name} o {ruta_pth.name} en {carpeta}")
     info = json.load(open(ruta_json, encoding="utf-8"))
     emg = info.get("emg")                                    # None en los modelos sin EMG
+    sin_lstm = bool(info.get("sin_lstm"))                    # ausente en los JSON anteriores
+    if emg and sin_lstm:
+        raise ValueError(f"{run}: no existe un modelo con EMG y sin LSTM.")
     posiciones = POSICIONES_EMG if emg else POSICIONES
     if info["n_canales_entrada"] != n_canales_entrada(posiciones):
         raise ValueError(f"{run}: n_canales_entrada={info['n_canales_entrada']} no coincide con las posiciones.")
-    config = TinySleepNetConfig(use_rnn=True, seq_length=ds_mod.DEFAULT_SEQ_LENGTH,
+    config = TinySleepNetConfig(use_rnn=not sin_lstm, seq_length=ds_mod.DEFAULT_SEQ_LENGTH,
                                 input_channels=info["n_canales_entrada"])
     if emg:
         from sleep_staging.models.tinysleepnet_emg import TinySleepNetEMG
         modelo = TinySleepNetEMG(config, rama=emg)
+    elif sin_lstm:
+        from sleep_staging.models.tinysleepnet_sin_lstm import TinySleepNetSinLSTM
+        modelo = TinySleepNetSinLSTM(config)
     else:
         modelo = TinySleepNet(config)
     modelo.load_state_dict(torch.load(ruta_pth, map_location="cpu"), strict=True)
@@ -174,6 +219,33 @@ def intervalo_bootstrap(y_true, y_pred, sujeto_de_epoca, n_boot=N_BOOTSTRAP, sem
             "n_sujetos": int(len(sujetos)), "n_bootstrap": n_boot}
 
 
+def metricas_por_persona(y_true, y_pred, sujeto_de_epoca) -> Dict:
+    """
+    F1 macro y exactitud de cada persona (sus dos noches juntas). El F1 macro de una persona se promedia
+    solo sobre las clases que aparecen en sus etiquetas reales (una clase sin ninguna epoca no se puntua
+    como 0). Devuelve la lista por persona y media, desviacion (n-1), minimo y maximo entre personas.
+    """
+    filas = []
+    for s in sorted(np.unique(sujeto_de_epoca)):
+        m = sujeto_de_epoca == s
+        cm = np.zeros((5, 5))
+        np.add.at(cm, (y_true[m], y_pred[m]), 1)
+        tp = np.diag(cm)
+        den = 2 * tp + (cm.sum(axis=0) - tp) + (cm.sum(axis=1) - tp)
+        f1 = np.where(den > 0, 2 * tp / np.where(den > 0, den, 1), 0.0)
+        con_soporte = cm.sum(axis=1) > 0
+        filas.append({"sujeto": str(s), "n_epocas": int(m.sum()),
+                      "accuracy": float(tp.sum() / cm.sum()),
+                      "macro_f1": float(f1[con_soporte].mean()),
+                      "clases_con_soporte": int(con_soporte.sum())})
+    resumen = {}
+    for k in ("macro_f1", "accuracy"):
+        v = np.array([f[k] for f in filas])
+        resumen[k] = {"media": float(v.mean()), "desviacion": float(v.std(ddof=1)) if len(v) > 1 else 0.0,
+                      "minimo": float(v.min()), "maximo": float(v.max())}
+    return {"personas": filas, "resumen": resumen}
+
+
 def curva_cobertura(probs: np.ndarray, y_true: np.ndarray, objetivo: float = OBJETIVO_EXACTITUD) -> Dict:
     """Para cada umbral t: fraccion de epocas con confianza >= t y exactitud dentro de ellas."""
     confianza, y_pred = probs.max(axis=1), probs.argmax(axis=1)
@@ -190,19 +262,123 @@ def curva_cobertura(probs: np.ndarray, y_true: np.ndarray, objetivo: float = OBJ
             "umbral_minimo": cumple[0] if cumple else None}
 
 
-def evaluar_combinacion(pred: Dict[str, np.ndarray], sujeto_de_rec: np.ndarray) -> Dict:
+# ---------------------------------------------------------------------
+# Umbrales fijados con la validacion
+# ---------------------------------------------------------------------
+def _archivos_validacion(dirs: Sequence[Path], modelo: str, combo: str) -> Dict[int, Path]:
+    """<modelo>_pliegue<k>__<combo>.npz en cualquiera de las carpetas (coincidencia exacta del nombre)."""
+    patron = re.compile(rf"^{re.escape(modelo)}_pliegue(\d+)__{re.escape(combo)}$")
+    por_pliegue: Dict[int, Path] = {}
+    for d in dirs:
+        for ruta in Path(d).rglob("*.npz"):
+            m = patron.match(ruta.stem)
+            if m:
+                k = int(m.group(1))
+                if k in por_pliegue and por_pliegue[k].resolve() != ruta.resolve():
+                    raise ValueError(f"Probabilidades de validacion duplicadas para {modelo}/{combo}, pliegue {k}: "
+                                     f"{por_pliegue[k]} y {ruta}")
+                por_pliegue[k] = ruta
+    return por_pliegue
+
+
+def cargar_probs_validacion(dirs: Sequence[Path], modelo: str, combo: str, exigir_pliegues: bool):
+    por_pliegue = _archivos_validacion(dirs, modelo, combo)
+    if exigir_pliegues and sorted(por_pliegue) != list(range(N_PLIEGUES)):
+        raise SystemExit(f"{modelo}/{combo}: se esperaban los {N_PLIEGUES} pliegues de validacion y hay "
+                         f"{sorted(por_pliegue)}. Un umbral con pliegues faltantes quedaria sesgado.")
+    if not por_pliegue:
+        return None
+    datos = [np.load(por_pliegue[k]) for k in sorted(por_pliegue)]
+    return (np.concatenate([d["probs"] for d in datos]), np.concatenate([d["y_true"] for d in datos]),
+            sorted(por_pliegue))
+
+
+def umbrales_desde_validacion(dirs: Sequence[Path], modelo: str, combos: Sequence[str], exigir_pliegues: bool) -> Dict:
+    """Umbral por combinacion y umbral global del modelo, con probabilidades de validacion de los 5 pliegues."""
+    por_comb, pool_p, pool_y = {}, [], []
+    for c in combos:
+        carga = cargar_probs_validacion(dirs, modelo, c, exigir_pliegues)
+        if carga is None:
+            por_comb[c] = None
+            continue
+        p, y, pliegues = carga
+        pool_p.append(p)
+        pool_y.append(y)
+        u = curva_cobertura(p, y)["umbral_minimo"]
+        por_comb[c] = {"umbral": u["umbral"] if u else None,
+                       "validacion": {"cobertura": u["cobertura"], "exactitud": u["exactitud"]} if u else None,
+                       "pliegues": pliegues, "n_epocas_validacion": int(len(y))}
+    glob = None
+    if pool_p and len(pool_p) == len(combos):
+        p, y = np.concatenate(pool_p), np.concatenate(pool_y)
+        u = curva_cobertura(p, y)["umbral_minimo"]
+        glob = {"umbral": u["umbral"] if u else None,
+                "validacion": {"cobertura": u["cobertura"], "exactitud": u["exactitud"]} if u else None,
+                "n_epocas_validacion": int(len(y))}
+    return {"combinaciones": por_comb, "global": glob}
+
+
+def evaluar_umbral(pred: Dict[str, np.ndarray], sujeto_de_rec: np.ndarray, umbral: Optional[float],
+                   n_boot: int = N_BOOTSTRAP, semilla: int = SEMILLA_BOOTSTRAP) -> Optional[Dict]:
+    """Cobertura y exactitud de las aceptadas en test con un umbral YA FIJADO; IC95 por sujeto."""
+    if umbral is None:
+        return None
+    probs, y_true = pred["probs"], pred["y_true"]
+    suj = sujeto_de_rec[pred["rec_idx"]]
+    acierto = probs.argmax(axis=1) == y_true
+    acepta = probs.max(axis=1) >= umbral
+    sujetos = np.unique(suj)
+    n_tot = np.array([(suj == s).sum() for s in sujetos], dtype=float)
+    n_acc = np.array([(acepta & (suj == s)).sum() for s in sujetos], dtype=float)
+    n_ok = np.array([(acepta & acierto & (suj == s)).sum() for s in sujetos], dtype=float)
+    cobertura = float(n_acc.sum() / n_tot.sum())
+    exactitud = float(n_ok.sum() / n_acc.sum()) if n_acc.sum() > 0 else None
+    idx = np.random.default_rng(semilla).integers(0, len(sujetos), size=(n_boot, len(sujetos)))
+    cob_b = n_acc[idx].sum(axis=1) / n_tot[idx].sum(axis=1)
+    ex_b = n_ok[idx].sum(axis=1) / np.maximum(n_acc[idx].sum(axis=1), 1)
+    err_global = 1.0 - float(acierto.mean())
+    return {"umbral": float(umbral), "cobertura": cobertura, "exactitud_aceptadas": exactitud,
+            "n_aceptadas": int(n_acc.sum()),
+            "cobertura_ic95": [float(np.percentile(cob_b, 2.5)), float(np.percentile(cob_b, 97.5))],
+            "exactitud_ic95": [float(np.percentile(ex_b, 2.5)), float(np.percentile(ex_b, 97.5))],
+            # si se aceptaran epocas al azar con la misma cobertura, el error seria el error global
+            "error_global": err_global,
+            "reduccion_relativa_del_error": (1.0 - (1.0 - exactitud) / err_global)
+            if exactitud is not None and err_global > 0 else None}
+
+
+def evaluar_combinacion(pred: Dict[str, np.ndarray], sujeto_de_rec: np.ndarray,
+                        umbrales_val: Optional[Dict] = None) -> Dict:
+    """umbrales_val: {"combinacion": {...}|None, "global": {...}|None} (ya fijados con la validacion)."""
     y_true, probs = pred["y_true"], pred["probs"]
     y_pred = probs.argmax(axis=1)
+    suj_epoca = sujeto_de_rec[pred["rec_idx"]]
     metricas = base.compute_metrics(y_true, y_pred)
-    metricas.update(intervalo_bootstrap(y_true, y_pred, sujeto_de_rec[pred["rec_idx"]]))
+    metricas.update(intervalo_bootstrap(y_true, y_pred, suj_epoca))
     metricas["n_epocas"] = int(len(y_true))
-    metricas["cobertura_vs_exactitud"] = curva_cobertura(probs, y_true)
+    metricas["por_persona"] = metricas_por_persona(y_true, y_pred, suj_epoca)
+    cv = curva_cobertura(probs, y_true)
+    cv["referencia_umbral_en_test"] = cv.pop("umbral_minimo")    # solo descriptivo: se ajusta sobre el propio test
+    metricas["cobertura_vs_exactitud"] = cv
+    metricas["umbral_validado"] = {}
+    for tipo in ("combinacion", "global"):
+        fijado = (umbrales_val or {}).get(tipo)
+        t = fijado["umbral"] if fijado else None
+        metricas["umbral_validado"][tipo] = (
+            {"validacion": fijado["validacion"], "test": evaluar_umbral(pred, sujeto_de_rec, t)} if fijado and t is not None
+            else None)
     return metricas
 
 
 # ---------------------------------------------------------------------
-# Figuras (PDF)
+# Figuras (PNG a 300 dpi y PDF)
 # ---------------------------------------------------------------------
+def _guardar(fig, ruta_base: Path) -> None:
+    ruta_base.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(ruta_base.with_suffix(".png"), dpi=300)
+    fig.savefig(ruta_base.with_suffix(".pdf"))
+
+
 def figura_matrices(modelo: str, resultados: Dict[str, Dict], ruta: Path, etiqueta: str = "test") -> None:
     import matplotlib
     matplotlib.use("Agg")
@@ -231,8 +407,7 @@ def figura_matrices(modelo: str, resultados: Dict[str, Dict], ruta: Path, etique
         ax.set_title(f"{nombre}\nF1 macro {resultados[nombre]['macro_f1']:.3f}", fontsize=7)
     fig.suptitle(f"Matrices de confusion ({etiqueta}): {modelo} (% por fila, entre parentesis el conteo)", fontsize=9)
     fig.tight_layout()
-    ruta.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(ruta)
+    _guardar(fig, ruta)
     plt.close(fig)
 
 
@@ -241,26 +416,48 @@ def figura_cobertura(modelo: str, resultados: Dict[str, Dict], ruta: Path, etiqu
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    estilos = ["-", "--", "-.", ":"]
+    marcas = ["o", "s", "^", "D", "v", "P", "X", "*"]
     fig, ax = plt.subplots(figsize=(7.0, 4.8))
-    for nombre, r in resultados.items():
-        cv = r["cobertura_vs_exactitud"]
-        curva = cv["curva"]
+    for i, (nombre, r) in enumerate(resultados.items()):
+        curva = r["cobertura_vs_exactitud"]["curva"]
         linea, = ax.plot([f["cobertura"] * 100 for f in curva], [f["exactitud"] * 100 for f in curva],
-                         label=nombre, lw=1.2)
-        u = cv["umbral_minimo"]
-        if u is not None:   # punto: umbral mas bajo cuya exactitud de aceptadas ya llega al objetivo
-            ax.plot(u["cobertura"] * 100, u["exactitud"] * 100, "o", color=linea.get_color(), ms=5)
+                         label=nombre, lw=1.2, ls=estilos[i % len(estilos)])
+        uv = (r["umbral_validado"].get("combinacion") or {}).get("test")
+        if uv is not None and uv["exactitud_aceptadas"] is not None:   # punto: umbral fijado en validacion, medido en test
+            ax.plot(uv["cobertura"] * 100, uv["exactitud_aceptadas"] * 100, marcas[i % len(marcas)],
+                    color=linea.get_color(), ms=6, mfc="none", mew=1.4)
     ax.axhline(OBJETIVO_EXACTITUD * 100, color="gray", ls="--", lw=0.8,
                label=f"objetivo {OBJETIVO_EXACTITUD * 100:.1f} % (acuerdo entre expertos)")
     ax.set_xlabel("Épocas aceptadas (%)")
     ax.set_ylabel("Exactitud de las aceptadas (%)")
-    ax.set_title(f"Cobertura vs exactitud ({etiqueta}): {modelo}", fontsize=9)
+    ax.set_title(f"Cobertura vs exactitud ({etiqueta}): {modelo}\nmarcador: umbral fijado en validacion", fontsize=9)
     ax.grid(alpha=0.25, lw=0.5)
     ax.legend(fontsize=6, loc="lower right")
     ax.invert_xaxis()
     fig.tight_layout()
-    ruta.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(ruta)
+    _guardar(fig, ruta)
+    plt.close(fig)
+
+
+def figura_por_persona(modelo: str, resultados: Dict[str, Dict], ruta: Path, etiqueta: str = "test") -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    nombres = list(resultados)
+    datos = [[p["macro_f1"] for p in resultados[n]["por_persona"]["personas"]] for n in nombres]
+    fig, ax = plt.subplots(figsize=(max(5.0, 0.7 * len(nombres) + 3), 4.2))
+    ax.boxplot(datos, showmeans=True, widths=0.5)
+    rng = np.random.default_rng(0)
+    for i, v in enumerate(datos, start=1):
+        ax.plot(i + rng.uniform(-0.12, 0.12, len(v)), v, "k.", ms=3, alpha=0.6)
+    ax.set_xticks(range(1, len(nombres) + 1), nombres, rotation=60, ha="right", fontsize=6)
+    ax.set_ylabel("F1 macro por persona")
+    ax.set_title(f"Variabilidad entre personas ({etiqueta}): {modelo}", fontsize=9)
+    ax.grid(alpha=0.25, lw=0.5)
+    fig.tight_layout()
+    _guardar(fig, ruta)
     plt.close(fig)
 
 
@@ -269,10 +466,21 @@ def figura_cobertura(modelo: str, resultados: Dict[str, Dict], ruta: Path, etiqu
 # ---------------------------------------------------------------------
 def main(argv: Optional[Sequence[str]] = None) -> Dict:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--modelos", required=True, help="Carpeta con <run>_final.pth y <run>_final.json de los 6 modelos.")
+    p.add_argument("--modelos", required=True, help="Carpeta con <run>_final.pth y <run>_final.json de los modelos.")
     p.add_argument("--modo", choices=["prueba", "test"], default="prueba")
     p.add_argument("--confirmo-test-unico", action="store_true",
                    help="Obligatorio con --modo test: confirma que el test se usa una sola vez.")
+    p.add_argument("--reanudar", action="store_true",
+                   help="Solo --modo test: completa una evaluacion que quedo 'en curso' reutilizando las "
+                        "predicciones ya guardadas en --salida (mismos pesos y mismos umbrales).")
+    p.add_argument("--candado", default=RUTA_CANDADO_POR_DEFECTO,
+                   help="Ruta FIJA del candado del test, fuera de --salida (por defecto TEST_YA_EJECUTADO.json en la "
+                        "raiz del repo, o la variable TEST_LOCK_PATH; en Colab, una ruta de Drive).")
+    p.add_argument("--probs-validacion", nargs="+", default=None,
+                   help="Carpetas con las probabilidades de validacion de la CV (probs_validacion/). Fijan los "
+                        "umbrales de confianza sin usar el test. Obligatorio con --modo test.")
+    p.add_argument("--solo", nargs="+", default=None, choices=MODELOS,
+                   help="Solo en --modo prueba: evalua unicamente estos modelos.")
     p.add_argument("--salida", default=None, help="Por defecto resultados_test (test) o resultados_test_PRUEBA (prueba).")
     p.add_argument("--figuras", default=None, help="Por defecto figures/ (test) o dentro de --salida (prueba).")
     p.add_argument("--sujetos-prueba", type=int, default=3, help="Sujetos de train usados en el modo prueba.")
@@ -281,29 +489,89 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
     es_test = args.modo == "test"
     salida = Path(args.salida or ("resultados_test" if es_test else "resultados_test_PRUEBA"))
     figuras = Path(args.figuras or ("figures" if es_test else salida / "figuras"))
-    candado = salida / "TEST_YA_EJECUTADO.json"
+    candado = Path(args.candado)
     etiqueta_fig = "test" if es_test else "ENSAYO: sujetos de train, no es rendimiento"
     carpeta = Path(args.modelos)
+    dirs_val = [Path(d) for d in args.probs_validacion] if args.probs_validacion else []
+    modelos_a_evaluar = list(MODELOS)
 
     # 1) comprobaciones que no tocan ningun dato
     if es_test:
         if not args.confirmo_test_unico:
             raise SystemExit("Falta --confirmo-test-unico: el test se usa UNA sola vez.")
+        if args.solo:
+            raise SystemExit("--solo solo se usa en modo prueba: el test se evalua con todos los modelos.")
+        if not dirs_val:
+            raise SystemExit("Falta --probs-validacion: los umbrales se fijan con la validacion antes de tocar el test.")
         if candado.exists():
-            raise SystemExit(f"El test ya se evaluo ({candado}). No se repite.")
-    faltan = [m for m in MODELOS if not ((carpeta / f"{m}_final.pth").exists() and (carpeta / f"{m}_final.json").exists())]
+            estado = json.load(open(candado, encoding="utf-8")).get("estado", "completo")
+            if estado == "completo":
+                raise SystemExit(f"El test ya se evaluo ({candado}). No se repite.")
+            if not args.reanudar:
+                raise SystemExit(f"Hay una evaluacion de test 'en curso' ({candado}). Para completarla, "
+                                 f"vuelve a correr con --reanudar (usa las predicciones ya guardadas).")
+        elif args.reanudar:
+            raise SystemExit(f"--reanudar necesita un candado 'en curso' y no existe {candado}.")
+    else:
+        if args.reanudar:
+            raise SystemExit("--reanudar solo existe en modo test.")
+        if args.solo:
+            modelos_a_evaluar = [m for m in MODELOS if m in args.solo]
+    faltan = [m for m in modelos_a_evaluar if not ((carpeta / f"{m}_final.pth").exists() and (carpeta / f"{m}_final.json").exists())]
     if faltan:
         raise SystemExit(f"Faltan archivos de estos modelos en {carpeta}: {faltan}")
-    modelos = {m: cargar_modelo(carpeta, m) for m in MODELOS}          # falla aqui si los pesos no encajan
+    modelos = {m: cargar_modelo(carpeta, m) for m in modelos_a_evaluar}   # falla aqui si los pesos no encajan
     print(f"Modelos cargados: {list(modelos)} | dispositivo: {base.DEVICE}")
 
-    # 2) sujetos
+    # 2) umbrales con la VALIDACION (antes de tocar el test)
+    umbrales: Dict[str, Dict] = {}
+    if dirs_val:
+        for m, (_, info, _) in modelos.items():
+            umbrales[m] = umbrales_desde_validacion(dirs_val, m, info["combinaciones"], exigir_pliegues=es_test)
+            g = umbrales[m]["global"]
+            print(f"  umbral de validacion {m:36s} global: "
+                  + (f"{g['umbral']}" if g and g["umbral"] is not None else "no alcanza el objetivo"
+                     if g else "sin probabilidades de validacion"))
+        if es_test:
+            sin = [m for m, u in umbrales.items() if u["global"] is None]
+            if sin:
+                raise SystemExit(f"Faltan probabilidades de validacion de: {sin}")
+    else:
+        print("[AVISO] Sin --probs-validacion: no se calculan umbrales fijados en validacion (solo en prueba).")
+
+    # 3) sujetos
     train_codes, test_codes = ds_mod.get_train_test_subject_codes()
     codigos = test_codes if es_test else train_codes[: args.sujetos_prueba]
     if es_test:
         assert not set(codigos) & set(train_codes), "Un sujeto de test aparece en train."
     print(f"Modo {args.modo.upper()}: {len(codigos)} sujetos"
           + ("" if es_test else " de TRAIN (el test no se toca)"))
+
+    # 4) candado AL EMPEZAR (solo modo test)
+    salida.mkdir(parents=True, exist_ok=True)
+    if es_test:
+        try:
+            commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=RAIZ).stdout.strip()
+        except Exception:
+            commit = ""
+        pesos_md5 = {m: md5(carpeta / f"{m}_final.pth") for m in MODELOS}
+        if args.reanudar:
+            previo = json.load(open(candado, encoding="utf-8"))
+            if previo.get("md5_pesos") != pesos_md5:
+                raise SystemExit("Los pesos de los modelos cambiaron desde que empezo el test: no se puede reanudar.")
+            if previo.get("umbrales_fijados_en_validacion") != json.loads(json.dumps(umbrales)):
+                raise SystemExit("Los umbrales de validacion cambiaron desde que empezo el test: no se puede reanudar.")
+            lock = previo
+            lock["reanudado_utc"] = lock.get("reanudado_utc", []) + [datetime.now(timezone.utc).isoformat()]
+        else:
+            lock = {"estado": "en curso", "fecha_inicio_utc": datetime.now(timezone.utc).isoformat(),
+                    "commit": commit, "n_sujetos_test": len(codigos), "modelos": list(MODELOS),
+                    "md5_pesos": pesos_md5, "salida": str(salida.resolve()),
+                    "SLEEP_NPZ_DIR": os.environ.get("SLEEP_NPZ_DIR"), "SLEEP_EMG_DIR": os.environ.get("SLEEP_EMG_DIR"),
+                    "probs_validacion": [str(d) for d in dirs_val], "argumentos": list(argv if argv is not None else sys.argv[1:]),
+                    "umbrales_fijados_en_validacion": json.loads(json.dumps(umbrales))}
+        escribir_json(candado, lock)
+        print(f"Candado del test ({lock['estado']}): {candado}")
 
     recs3 = ds_mod.load_npz_recordings(subject_codes=codigos, max_epochs_per_recording=None)   # noches completas
     recsE = None
@@ -312,55 +580,94 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
         recsE = cargar_con_emg(subject_codes=codigos, max_epochs_per_recording=None)
         assert [r.recording_id for r in recsE] == [r.recording_id for r in recs3], "Grabaciones distintas entre 3 canales y EMG."
     sujeto_de_rec = np.array([r.subject_code for r in recs3])
-    print(f"{len(recs3)} grabaciones, {sum(r.X.shape[0] for r in recs3)} epocas")
+    n_totales = int(sum(r.X.shape[0] for r in recs3))
+    n_esperadas = int(sum((r.X.shape[0] // ds_mod.DEFAULT_SEQ_LENGTH) * ds_mod.DEFAULT_SEQ_LENGTH for r in recs3))
+    print(f"{len(recs3)} grabaciones, {n_totales} epocas, {n_esperadas} evaluadas "
+          f"(bloques de {ds_mod.DEFAULT_SEQ_LENGTH} sin traslape; se descarta el resto de cada noche)")
 
-    # 3) evaluacion
-    salida.mkdir(parents=True, exist_ok=True)
+    # 5) evaluacion
     resumen: Dict = {"modo": args.modo, "sujetos": list(codigos), "n_grabaciones": len(recs3),
-                     "grabaciones": [r.recording_id for r in recs3], "modelos": {}}
+                     "grabaciones": [r.recording_id for r in recs3],
+                     "protocolo": {"bloques_de_epocas": ds_mod.DEFAULT_SEQ_LENGTH, "traslape": False,
+                                   "n_epocas_totales": n_totales, "n_epocas_evaluadas": n_esperadas,
+                                   "bootstrap": {"n": N_BOOTSTRAP, "semilla": SEMILLA_BOOTSTRAP, "unidad": "sujeto"},
+                                   "objetivo_exactitud": OBJETIVO_EXACTITUD,
+                                   "umbrales": "fijados con las probabilidades de validacion de la CV"},
+                     "modelos": {}}
     for nombre, (modelo, info, posiciones) in modelos.items():
         recs = recsE if info.get("emg") else recs3
         combos = [combinacion_por_nombre(c, posiciones) for c in info["combinaciones"]]
         resultados: Dict[str, Dict] = {}
         t0 = time.time()
         for combo in combos:
-            pred = predecir(modelo, recs, combo, posiciones)
-            np.savez_compressed(salida / f"probs_{nombre}__{combo[0]}.npz", **pred)
-            resultados[combo[0]] = evaluar_combinacion(pred, sujeto_de_rec)
+            ruta_npz = salida / f"probs_{nombre}__{combo[0]}.npz"
+            if args.reanudar and ruta_npz.exists():
+                pred = {k: v for k, v in np.load(ruta_npz).items()}
+                if len(pred["y_true"]) != n_esperadas:
+                    raise SystemExit(f"{ruta_npz.name} no tiene {n_esperadas} epocas: borra solo ese archivo y reanuda.")
+                print(f"  (reutiliza {ruta_npz.name})")
+            else:
+                pred = predecir(modelo, recs, combo, posiciones)
+                tmp = ruta_npz.with_name(ruta_npz.stem + ".tmp.npz")
+                np.savez_compressed(tmp, **pred)
+                tmp.replace(ruta_npz)
+            umb = umbrales.get(nombre)
+            umb_c = {"combinacion": (umb["combinaciones"].get(combo[0]) if umb else None),
+                     "global": (umb["global"] if umb else None)}
+            resultados[combo[0]] = evaluar_combinacion(pred, sujeto_de_rec, umb_c)
             r = resultados[combo[0]]
+            pp = r["por_persona"]["resumen"]["macro_f1"]
             print(f"  {nombre:36s} {combo[0]:52s} F1 macro {r['macro_f1']:.4f} "
-                  f"[{r['macro_f1_ic95'][0]:.3f}, {r['macro_f1_ic95'][1]:.3f}] | kappa {r['cohens_kappa']:.4f}")
+                  f"[{r['macro_f1_ic95'][0]:.3f}, {r['macro_f1_ic95'][1]:.3f}] | kappa {r['cohens_kappa']:.4f} "
+                  f"| por persona {pp['media']:.3f} ± {pp['desviacion']:.3f}")
         resumen["modelos"][nombre] = {"n_epocas_entrenamiento": info["n_epocas"], "emg": info.get("emg"),
+                                      "sin_lstm": bool(info.get("sin_lstm")),
+                                      "noche_completa": info.get("noche_completa"),
+                                      "epocas_cv": info.get("epocas_cv"),
+                                      "umbrales_validacion": umbrales.get(nombre),
                                       "combinaciones": resultados}
-        figura_matrices(nombre, resultados, figuras / f"test_matriz_confusion_{nombre}.pdf", etiqueta_fig)
-        figura_cobertura(nombre, resultados, figuras / f"test_cobertura_{nombre}.pdf", etiqueta_fig)
+        figura_matrices(nombre, resultados, figuras / f"test_matriz_confusion_{nombre}", etiqueta_fig)
+        figura_cobertura(nombre, resultados, figuras / f"test_cobertura_{nombre}", etiqueta_fig)
+        figura_por_persona(nombre, resultados, figuras / f"test_por_persona_{nombre}", etiqueta_fig)
         print(f"  [{nombre}] listo en {time.time() - t0:.0f} s")
 
-    with open(salida / "resultados_test.json", "w", encoding="utf-8") as f:
-        json.dump(resumen, f, indent=2, ensure_ascii=False)
+    ruta_json = salida / "resultados_test.json"
+    escribir_json(ruta_json, resumen)
 
-    # tabla plana para el articulo
-    with open(salida / "tabla_test.csv", "w", encoding="utf-8") as f:
+    # tablas planas para el articulo (3 decimales; F1 de la clase M: la clase no se entrena, va con guion)
+    with open(salida / "tabla_test.csv", "w", encoding="utf-8-sig") as f:
         f.write("modelo,combinacion,accuracy,macro_f1,macro_f1_ic95_bajo,macro_f1_ic95_alto,balanced_accuracy,kappa,"
-                + ",".join(f"f1_{c}" for c in CLASES) + ",umbral_82_6,cobertura_en_umbral,n_epocas\n")
+                + ",".join(f"f1_{c}" for c in CLASES) + ",f1_M,"
+                "f1_persona_media,f1_persona_desv,f1_persona_min,f1_persona_max,"
+                "umbral_val_combinacion,cobertura_test,exactitud_aceptadas_test,"
+                "umbral_val_global,cobertura_test_global,exactitud_aceptadas_test_global,n_epocas\n")
         for m, d in resumen["modelos"].items():
             for c, r in d["combinaciones"].items():
-                u = r["cobertura_vs_exactitud"]["umbral_minimo"]
-                f.write(f"{m},{c},{r['accuracy']:.4f},{r['macro_f1']:.4f},{r['macro_f1_ic95'][0]:.4f},"
-                        f"{r['macro_f1_ic95'][1]:.4f},{r['balanced_accuracy']:.4f},{r['cohens_kappa']:.4f},"
-                        + ",".join(f"{r['f1_per_class'][k]:.4f}" for k in CLASES)
-                        + f",{u['umbral'] if u else ''},{u['cobertura'] if u else ''},{r['n_epocas']}\n")
+                pp = r["por_persona"]["resumen"]["macro_f1"]
+                uc = (r["umbral_validado"]["combinacion"] or {}).get("test")
+                ug = (r["umbral_validado"]["global"] or {}).get("test")
+                f.write(f"{m},{c},{fmt(r['accuracy'])},{fmt(r['macro_f1'])},{fmt(r['macro_f1_ic95'][0])},"
+                        f"{fmt(r['macro_f1_ic95'][1])},{fmt(r['balanced_accuracy'])},{fmt(r['cohens_kappa'])},"
+                        + ",".join(fmt(r["f1_per_class"][k]) for k in CLASES) + ",—,"
+                        + f"{fmt(pp['media'])},{fmt(pp['desviacion'])},{fmt(pp['minimo'])},{fmt(pp['maximo'])},"
+                        + f"{fmt(uc and uc['umbral'], 2)},{fmt(uc and uc['cobertura'])},{fmt(uc and uc['exactitud_aceptadas'])},"
+                        + f"{fmt(ug and ug['umbral'], 2)},{fmt(ug and ug['cobertura'])},{fmt(ug and ug['exactitud_aceptadas'])},"
+                        + f"{r['n_epocas']}\n")
+    with open(salida / "por_persona.csv", "w", encoding="utf-8-sig") as f:
+        f.write("modelo,combinacion,sujeto,n_epocas,accuracy,macro_f1,clases_con_soporte\n")
+        for m, d in resumen["modelos"].items():
+            for c, r in d["combinaciones"].items():
+                for q in r["por_persona"]["personas"]:
+                    f.write(f"{m},{c},{q['sujeto']},{q['n_epocas']},{fmt(q['accuracy'])},{fmt(q['macro_f1'])},"
+                            f"{q['clases_con_soporte']}\n")
 
-    # 4) candado (solo en modo test)
+    # 6) candado: completo
     if es_test:
-        try:
-            commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=RAIZ).stdout.strip()
-        except Exception:
-            commit = ""
-        with open(candado, "w", encoding="utf-8") as f:
-            json.dump({"fecha_utc": datetime.now(timezone.utc).isoformat(), "commit": commit,
-                       "n_sujetos_test": len(codigos),
-                       "md5_pesos": {m: md5(carpeta / f"{m}_final.pth") for m in MODELOS}}, f, indent=2)
+        lock["estado"] = "completo"
+        lock["fecha_fin_utc"] = datetime.now(timezone.utc).isoformat()
+        lock["n_epocas_totales"], lock["n_epocas_evaluadas"] = n_totales, n_esperadas
+        lock["md5_resultados_test_json"] = md5(ruta_json)
+        escribir_json(candado, lock)
         print(f"\nTest evaluado y bloqueado: {candado}")
     print(f"Resultados en {salida}")
     return resumen

@@ -136,8 +136,8 @@ Cada etapa tiene un comando y su configuración en `configs/`. Cada corrida qued
 | 2. Construir el conjunto de épocas | <!-- PENDIENTE (Santiago) --> `python scripts/02_build_dataset.py` | Santiago |
 | 3. Entrenar los modelos clásicos | <!-- PENDIENTE (Santiago) --> `python scripts/04_train_classical.py` | Santiago |
 | 4. Entrenar TinySleepNet | `python scripts/05_train_tinysleepnet.py --modo cv` (validación cruzada) o `--modo final` | Gabriel |
-| 5. Entrenar la versión flexible de canales (validación cruzada y modelo final) | `python scripts/06_train_flexible.py --modo cv` y luego `--modo final` (`--emg mlp` agrega el EMG; `--control <combinación>` entrena un control) | Gabriel |
-| 6. Evaluar en test (una sola vez, con autorización) | `python scripts/08_evaluar_test.py --modo test --confirmo-test-unico` (antes, `--modo prueba` como ensayo) | Gabriel |
+| 5. Entrenar la versión flexible de canales (validación cruzada y modelo final) | `python scripts/06_train_flexible.py` (validación cruzada) y luego `python scripts/06_train_flexible.py --final`. Opciones: `--emg mlp` agrega el EMG; `--control <combinación>` entrena un control (con EMG: `--emg mlp --control eeg_fpz_cz__eeg_pz_oz__eog_horizontal__emg_submental`); `--sin-lstm` entrena la ablación sin LSTM; `--final --noche-completa` entrena el final con las noches completas (la validación cruzada usa la ventana de `max_epochs_per_recording`). La validación cruzada guarda las probabilidades de validación en `<salida>/probs_validacion/` | Gabriel |
+| 6. Evaluar en test (una sola vez, con autorización) | `python scripts/08_evaluar_test.py --modelos <carpeta> --probs-validacion <carpetas de la CV> --modo test --confirmo-test-unico` (antes, `--modo prueba` como ensayo). Los umbrales de confianza se fijan con las probabilidades de validación, antes de abrir el test. El candado `TEST_YA_EJECUTADO.json` se crea al empezar (ruta `--candado` o `TEST_LOCK_PATH`); si la corrida se corta, se completa con `--reanudar` | Gabriel |
 | 7. Subir a MLflow | `scripts/07_log_mlflow_flexible.py`: ver la subsección siguiente | Gabriel |
 
 ### Registrar en MLflow y marcar el modelo campeón
@@ -151,14 +151,16 @@ python scripts/07_log_mlflow_flexible.py --carpeta resultados --run flexible
 # 2. Modelo final: agrega los pesos y el JSON al mismo run (modelo_final/)
 python scripts/07_log_mlflow_flexible.py --carpeta resultados --run flexible --final --cv-run-id <run_id>
 
-# 3. Test (solo si ya existe TEST_YA_EJECUTADO.json): agrega las métricas test_* y las figuras
-python scripts/07_log_mlflow_flexible.py --run flexible --cv-run-id <run_id> --test-carpeta resultados_test
+# 3. Test (solo si el candado TEST_YA_EJECUTADO.json está "completo"): agrega las métricas test_* y las figuras
+python scripts/07_log_mlflow_flexible.py --run flexible --cv-run-id <run_id> --test-carpeta resultados_test --candado <ruta del candado>
 
-# 4. Campeón: etiqueta ese run champion=true y se la quita a los anteriores
+# 4. Campeón: etiqueta ese run champion=true y se la quita a todos los demás del experimento
 python scripts/07_log_mlflow_flexible.py --run flexible --cv-run-id <run_id> --campeon
 ```
 
-Los pasos 2 a 4 se pueden pedir en un solo comando. `--run` es `flexible`, `flexible_emg_mlp` o `control_<combinación>`. Si el campeón no es `flexible`, hay que cambiar `artifact_name` en el registro (y el código de la API, porque `flexible_emg_mlp` usa `TinySleepNetEMG` y recibe el EMG repetido 100 veces); el script avisa en ese caso. Sin `--cv-run-id`, `--final` conserva el comportamiento anterior (un run aparte que la API no usa).
+Los pasos 2 a 4 se pueden pedir en un solo comando. `--run` es `flexible`, `flexible_emg_mlp`, `flexible_sin_lstm` o `control_<combinación>`.
+
+**Criterio del campeón** (se fija antes de mirar el test; el test solo reporta): el modelo flexible con mayor F1 macro medio en la validación cruzada sobre las 6 combinaciones comunes (las que no usan EMG), tomando el run más reciente de `flexible` y de `flexible_emg_mlp`. Solo esos dos pueden ser campeón; los controles y la ablación sin LSTM son comparaciones. `--campeon` imprime el ranking, se detiene si el run elegido no es el primero (salvo `--forzar`, que queda anotado en el run) y guarda el criterio en la etiqueta `criterio_campeon`. Si el campeón no es `flexible`, hay que cambiar `artifact_name` en el registro (y el código de la API, porque `flexible_emg_mlp` usa `TinySleepNetEMG` y recibe el EMG repetido 100 veces); el script avisa en ese caso. Sin `--cv-run-id`, `--final` conserva el comportamiento anterior (un run aparte que la API no usa).
 
 ## 11. Parámetros configurables
 
