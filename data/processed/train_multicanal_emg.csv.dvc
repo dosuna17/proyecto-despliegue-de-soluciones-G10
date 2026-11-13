@@ -1,0 +1,5 @@
+outs:
+- md5: 1bfbb562b4f53c297335af308096beca
+  size: 607705350
+  hash: md5
+  path: train_multicanal_emg.csv
