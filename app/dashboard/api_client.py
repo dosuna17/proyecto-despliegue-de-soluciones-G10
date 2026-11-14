@@ -35,7 +35,6 @@ class InfoModelo:
     canales_modelo: List[str]
     clases: List[str]
     combinaciones: List[List[str]]
-    con_presencia: bool = True
     origen: str = "config"  # "api" si se leyó de GET /models
     descripcion: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
@@ -135,24 +134,10 @@ class ClienteAPI:
             descripcion=respaldo.get("descripcion", ""),
         )
 
-    def info_modelo_comparacion(self) -> InfoModelo:
-        datos = self.config["comparacion_modelos"]
-        return InfoModelo(
-            nombre=datos["nombre"],
-            endpoint=datos["endpoint"],
-            epocas_por_llamada=datos["epocas_por_llamada"],
-            canales_modelo=list(datos["canales_modelo"]),
-            clases=list(self.config["modelo"]["clases"]),
-            combinaciones=combinaciones_desde_canales(datos["canales_modelo"]),
-            con_presencia=False,
-            origen="config",
-        )
-
     # --------------------------------------------------------------- inferencia
     def _enviar_bloque(self, modelo: InfoModelo, bloque: np.ndarray) -> List[Dict[str, Any]]:
         canales = list(modelo.canales_modelo)
-        if modelo.con_presencia:
-            canales += [f"presence {c}" for c in modelo.canales_modelo]
+        canales += [f"presence {c}" for c in modelo.canales_modelo]
         cuerpo = {
             "channel_names": canales,
             "sampling_rate_hz": self.config["senales"]["frecuencia_hz"],
@@ -212,7 +197,7 @@ class ClienteAPI:
 
         def tarea(bloque: Tuple[int, int, int]) -> Tuple[Tuple[int, int, int], List[Dict[str, Any]]]:
             inicio, fin, _ = bloque
-            datos = construir_bloque(senales, canales_usados, modelo.canales_modelo, inicio, fin, muestras, modelo.con_presencia)
+            datos = construir_bloque(senales, canales_usados, modelo.canales_modelo, inicio, fin, muestras)
             return bloque, self._enviar_bloque(modelo, datos)
 
         comienzo = time.perf_counter()

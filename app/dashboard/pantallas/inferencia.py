@@ -74,17 +74,6 @@ def mostrar(config: Dict[str, Any], cliente: ClienteAPI) -> None:
         resultado = cliente.clasificar(registro.senales, seleccion, modelo, n_epocas, progreso)
         st.session_state["resultado"] = resultado
 
-        if config["comparacion_modelos"]["mostrar"]:
-            barra.progress(0.0, text="Clasificando con el modelo de comparación…")
-            try:
-                modelo_cmp = cliente.info_modelo_comparacion()
-                st.session_state["resultado_comparacion"] = cliente.clasificar(
-                    registro.senales, seleccion, modelo_cmp, n_epocas, progreso
-                )
-            except ErrorAPI as error:  # la comparación nunca debe impedir ver el resultado principal
-                st.session_state["resultado_comparacion"] = None
-                st.session_state["error_comparacion"] = error.mensaje
-
         barra.progress(1.0, text="Calculando los indicadores…")
         st.session_state["analisis"] = _analizar(config, registro, resultado)
     except ErrorAPI as error:

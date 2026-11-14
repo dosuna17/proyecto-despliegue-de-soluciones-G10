@@ -31,7 +31,6 @@ VARIABLES_ENTORNO: Dict[str, Tuple[Tuple[str, ...], Callable[[str], Any]]] = {
     "TABLERO_TIMEOUT_INFERENCIA_S": (("api", "timeout_inferencia_s"), float),
     "TABLERO_SOLICITUDES_PARALELAS": (("api", "solicitudes_paralelas"), int),
     "TABLERO_UMBRAL_CONFIANZA": (("interpretacion", "umbral_confianza"), float),
-    "TABLERO_MOSTRAR_COMPARACION": (("comparacion_modelos", "mostrar"), _a_booleano),
     "TABLERO_TAMANO_MAXIMO_MB": (("carga", "tamano_maximo_mb"), int),
     "TABLERO_CARPETA_DEMOS": (("estudios_demo", "carpeta"), str),
 }

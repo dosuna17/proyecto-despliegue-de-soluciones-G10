@@ -17,7 +17,12 @@ import numpy as np
 
 CANALES_EEG = ("EEG Fpz-Cz", "EEG Pz-Oz")
 CANALES_OPCIONALES = ("EOG horizontal", "EMG submental")
-POSICIONES_TINYSLEEPNET = ("EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal")
+POSICIONES_TINYSLEEPNET = (
+    "EEG Fpz-Cz",
+    "EEG Pz-Oz",
+    "EOG horizontal",
+    "EMG submental",
+)
 ESTADIOS_SUENO = ("N1", "N2", "N3", "REM")
 # Orden clínico del hipnograma, de arriba hacia abajo.
 ORDEN_HIPNOGRAMA = ("W", "REM", "N1", "N2", "N3")

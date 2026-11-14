@@ -11,7 +11,7 @@ import graficas
 import informe
 import textos
 from pantallas.comun import hora_epoca, minutos_a_texto, reiniciar, tema
-from procesamiento import comparar_con_experto, kappa_cohen, numero_combinacion
+from procesamiento import comparar_con_experto, numero_combinacion
 from registro import Registro
 
 
@@ -233,38 +233,6 @@ def _concordancia(config, concordancia) -> None:
                     use_container_width=True, config={"displayModeBar": False})
 
 
-def _comparacion_modelos(config, registro, resultado, comparacion, ventana) -> None:
-    st.subheader("Comparación entre modelos (sustentación)", anchor=False)
-    st.caption("Esta sección solo se muestra con comparacion_modelos.mostrar = true y no forma parte de la "
-               "interfaz para el usuario final.")
-    if comparacion is None:
-        st.info(st.session_state.get("error_comparacion", "El modelo de comparación no respondió."))
-        return
-    a = np.asarray(resultado.estadios, dtype=object)[ventana.inicio:ventana.fin]
-    b = np.asarray(comparacion.estadios, dtype=object)[ventana.inicio:ventana.fin]
-    clases = resultado.clases
-    indice = {c: i for i, c in enumerate(clases)}
-    matriz = np.zeros((len(clases), len(clases)), dtype=int)
-    for x, y in zip(a, b):
-        if x in indice and y in indice:
-            matriz[indice[x], indice[y]] += 1
-    filas = st.columns(3 if registro.tiene_hipnograma else 2)
-    filas[0].metric(f"Acuerdo {st.session_state['modelo'].nombre} vs. XGBoost", f"{np.mean(a == b):.0%}")
-    filas[1].metric("Kappa entre modelos", f"{kappa_cohen(matriz):.2f}")
-    if registro.tiene_hipnograma:
-        otra = comparar_con_experto(comparacion.estadios, registro.etiquetas_experto, ventana, clases)
-        if otra:
-            filas[2].metric("Kappa de XGBoost con el experto", f"{otra.kappa:.2f}")
-    tiempos = graficas.eje_tiempo(len(comparacion.estadios), registro.inicio.replace(tzinfo=None) if registro.inicio else None,
-                                  config["senales"]["duracion_epoca_s"])
-    st.plotly_chart(
-        graficas.hipnograma(comparacion.estadios[ventana.inicio:ventana.fin], comparacion.confianzas[ventana.inicio:ventana.fin],
-                            tiempos[ventana.inicio:ventana.fin], config["interpretacion"]["umbral_confianza"], tema(),
-                            duracion_epoca_s=config["senales"]["duracion_epoca_s"], titulo_modelo="Clasificación de XGBoost"),
-        use_container_width=True,
-    )
-
-
 def mostrar(config: Dict[str, Any]) -> None:
     registro: Registro = st.session_state["registro"]
     resultado = st.session_state["resultado"]
@@ -306,9 +274,6 @@ def mostrar(config: Dict[str, Any]) -> None:
 
     if analisis["concordancia"] is not None:
         _concordancia(config, analisis["concordancia"])
-
-    if config["comparacion_modelos"]["mostrar"]:
-        _comparacion_modelos(config, registro, resultado, st.session_state.get("resultado_comparacion"), ventana)
 
     st.subheader("Descargar resultados", anchor=False, help=textos.AYUDA["descarga"])
     col_pdf, col_excel = st.columns(2)

@@ -33,6 +33,7 @@ modelo:
     - EEG Fpz-Cz
     - EEG Pz-Oz
     - EOG horizontal
+    - EMG submental
   clases: [W, N1, N2, N3, REM]
   # Desempeño del modelo en personas que no participaron en el entrenamiento.
   # Dejar en null hasta tener los valores definitivos del artículo; mientras
@@ -42,18 +43,6 @@ modelo:
     kappa: null
     f1_macro: null
     descripcion_evaluacion: null
-
-comparacion_modelos:
-  # Solo para la sustentación: muestra además la clasificación de XGBoost.
-  # En la interfaz para el usuario final debe quedar en false.
-  mostrar: false
-  nombre: XGBoost
-  endpoint: /predict-xgboost
-  epocas_por_llamada: 200
-  canales_modelo:
-    - EEG Fpz-Cz
-    - EEG Pz-Oz
-    - EOG horizontal
 
 senales:
   frecuencia_hz: 100

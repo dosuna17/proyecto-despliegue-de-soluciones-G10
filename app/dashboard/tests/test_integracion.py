@@ -60,12 +60,9 @@ def test_variables_de_entorno_tienen_prioridad(config):
     cfg = cargar_config(RUTA_CONFIG_POR_DEFECTO, entorno={
         "SLEEP_STAGING_API_URL": "http://api:8000/",
         "TABLERO_UMBRAL_CONFIANZA": "0.7",
-        "TABLERO_MOSTRAR_COMPARACION": "true",
     })
     assert cfg["api"]["url"] == "http://api:8000"
     assert cfg["interpretacion"]["umbral_confianza"] == 0.7
-    assert cfg["comparacion_modelos"]["mostrar"] is True
-    assert config["comparacion_modelos"]["mostrar"] is False  # por defecto, interfaz de usuario final
 
 
 def test_valor_de_entorno_invalido_se_explica():
@@ -108,7 +105,7 @@ def test_estudio_demo_ida_y_vuelta(registro, tmp_path):
 def test_sin_endpoint_models_usa_la_configuracion(config, monkeypatch):
     modelo = _cliente(config, monkeypatch).info_modelo()
     assert modelo.origen == "config"
-    assert len(modelo.combinaciones) == 6  # sin EMG: 3 opciones de EEG x con/sin EOG
+    assert len(modelo.combinaciones) == 12  # tres opciones de EEG por cuatro combinaciones de EOG/EMG
 
 
 def test_con_endpoint_models_usa_lo_que_dice_la_api(config, monkeypatch):
@@ -117,7 +114,8 @@ def test_con_endpoint_models_usa_lo_que_dice_la_api(config, monkeypatch):
 
 
 @pytest.mark.parametrize("canales", [["EEG Fpz-Cz"], ["EEG Pz-Oz", "EOG horizontal"],
-                                     ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]])
+                                     ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"],
+                                     ["EEG Fpz-Cz", "EOG horizontal", "EMG submental"]])
 def test_clasifica_todas_las_epocas_con_cada_combinacion(config, monkeypatch, registro, canales):
     cliente = _cliente(config, monkeypatch)
     modelo = cliente.info_modelo()
@@ -127,12 +125,6 @@ def test_clasifica_todas_las_epocas_con_cada_combinacion(config, monkeypatch, re
     assert not np.any(resultado.estadios == "?")  # ninguna época sin clasificar
     assert resultado.probabilidades.shape == (n, 5)
     assert avance[-1][0] == avance[-1][1]
-
-
-def test_comparacion_con_xgboost_envia_tres_canales_sin_marcas(config, monkeypatch, registro):
-    cliente = _cliente(config, monkeypatch)
-    resultado = cliente.clasificar(registro.senales, ["EEG Fpz-Cz"], cliente.info_modelo_comparacion(), 300)
-    assert len(resultado.estadios) == 300
 
 
 def test_error_de_validacion_llega_en_lenguaje_llano(config, monkeypatch, registro):

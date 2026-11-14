@@ -13,14 +13,17 @@ Uso (desde la raíz del repositorio):
 from __future__ import annotations
 
 import os
+from itertools import product
 from typing import Any, Dict, List
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-CANALES = ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]
+CANALES = ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal", "EMG submental"]
 CLASES = ["W", "N1", "N2", "N3", "REM"]
+EEG_OPCIONES = [[CANALES[0]], [CANALES[1]], CANALES[:2]]
+EXTRAS_OPCIONES = [[], [CANALES[2]], [CANALES[3]], CANALES[2:]]
 
 app = FastAPI(title="API simulada (solo pruebas del tablero)")
 
@@ -70,9 +73,7 @@ if os.getenv("API_SIMULADA_CON_MODELS") == "1":
             "epocas_por_llamada": 15,
             "canales_modelo": CANALES,
             "clases": CLASES,
-            "combinaciones": [["EEG Fpz-Cz"], ["EEG Pz-Oz"], ["EEG Fpz-Cz", "EEG Pz-Oz"],
-                              ["EEG Fpz-Cz", "EOG horizontal"], ["EEG Pz-Oz", "EOG horizontal"],
-                              ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]],
+            "combinaciones": [eeg + extras for eeg, extras in product(EEG_OPCIONES, EXTRAS_OPCIONES)],
         }
 
 
@@ -82,28 +83,17 @@ def predict_tinysleepnet(solicitud: Solicitud) -> Dict[str, Any]:
     if solicitud.channel_names != esperado:
         raise HTTPException(422, {"message": "channel_names debe respetar el orden fijo.", "expected": esperado})
     x = np.asarray(solicitud.epochs, dtype=np.float32)
-    if x.shape != (15, 6, 3000):
-        raise HTTPException(422, f"Forma inválida {x.shape}; se espera (15, 6, 3000).")
-    presencia = x[:, 3:6, 0]
+    if x.shape != (15, 8, 3000):
+        raise HTTPException(422, f"Forma inválida {x.shape}; se espera (15, 8, 3000).")
+    presencia = x[:, 4:8, 0]
     if not np.isin(presencia, (0, 1)).all() or not presencia[:, :2].any():
         raise HTTPException(422, "Debe llegar al menos un EEG con marca de presencia.")
-    for k in range(3):
+    for k in range(4):
         if presencia[0, k] == 0 and np.any(x[:, k] != 0):
             raise HTTPException(422, "Una señal marcada como ausente debe enviarse en ceros.")
     eeg = [k for k in (0, 1) if presencia[0, k] == 1]
     eog = 2 if presencia[0, 2] == 1 else None
-    return {"model_name": "simulado", "channel": "TinySleepNet-6-canales", "sampling_rate_hz": 100,
+    return {"model_name": "simulado", "channel": "TinySleepNet-8-canales", "sampling_rate_hz": 100,
             "predictions": _respuesta(x, eeg, eog)}
 
 
-@app.post("/predict-xgboost")
-def predict_xgboost(solicitud: Solicitud) -> Dict[str, Any]:
-    if set(solicitud.channel_names) != set(CANALES):
-        raise HTTPException(422, {"message": "XGBoost requiere exactamente las tres señales.", "expected": CANALES})
-    x = np.asarray(solicitud.epochs, dtype=np.float32)
-    eeg = [k for k in (0, 1) if np.any(x[:, k] != 0)]
-    if not eeg:
-        raise HTTPException(422, "XGBoost requiere al menos una señal EEG no vacía.")
-    eog = 2 if np.any(x[:, 2] != 0) else None
-    return {"model_name": "simulado-xgb", "channel_names": solicitud.channel_names, "sampling_rate_hz": 100,
-            "predictions": _respuesta(x * 1.05, eeg, eog)}
