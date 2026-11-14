@@ -24,6 +24,7 @@ def _payload() -> dict:
     epochs[:, 3, :] = 1.0
     epochs[:, 4, :] = 1.0
     epochs[:, 5, :] = 1.0
+    epochs[:, 7, :] = 1.0
     return {
         "channel_names": api_main.DL_CHANNEL_NAMES,
         "sampling_rate_hz": 100,
@@ -55,6 +56,36 @@ def test_predict_rejects_an_invalid_epoch_count() -> None:
     response = TestClient(app).post("/predict-tinysleepnet", json=payload)
 
     assert response.status_code == 422
+
+
+def test_predict_processes_multiple_sequences_in_one_request(monkeypatch) -> None:
+    class ModeloSimulado:
+        uses_emg = True
+
+        @staticmethod
+        def predict_proba(signal):
+            batch, sequence, _channels, _samples = signal.shape
+            probabilities = torch.full((batch, sequence, len(CLASS_NAMES)), 1 / len(CLASS_NAMES))
+            predictions = torch.zeros((batch, sequence), dtype=torch.long)
+            confidences = torch.full((batch, sequence), 1 / len(CLASS_NAMES))
+            return {
+                "probabilities": probabilities,
+                "pred_class": predictions,
+                "confidence": confidences,
+            }, None
+
+    payload = _payload()
+    one_sequence = np.asarray(payload["epochs"], dtype=np.float32)
+    payload["epochs"] = np.stack([one_sequence, one_sequence]).tolist()
+    monkeypatch.setattr(api_main, "model_path", lambda artifact: "fake-checkpoint.pth")
+    monkeypatch.setattr(api_main, "load_model", lambda *args: ModeloSimulado())
+
+    response = TestClient(app).post("/predict-tinysleepnet", json=payload)
+
+    assert response.status_code == 200
+    predictions = response.json()["predictions"]
+    assert len(predictions) == 30
+    assert [prediction["epoch_index"] for prediction in predictions] == list(range(30))
 
 
 def test_predict_rejects_an_invalid_model_artifact_path() -> None:

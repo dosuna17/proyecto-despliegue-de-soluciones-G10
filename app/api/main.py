@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.data.segmentation import CLASS_NAMES
 from src.sleep_staging.models.tinysleepnet import TinySleepNet, TinySleepNetConfig
+from src.sleep_staging.models.tinysleepnet_emg import TinySleepNetEMG
 from src.config import MLFLOW_TRACKING_URI
 from src.utils.mlflow_runs import load_model_registry, resolve_latest_model_artifact
 
@@ -28,6 +29,7 @@ SAMPLE_RATE_HZ = 100
 EPOCH_SECONDS = 30
 SAMPLES_PER_EPOCH = SAMPLE_RATE_HZ * EPOCH_SECONDS
 SEQUENCE_LENGTH = 15
+MAX_SEQUENCES_PER_REQUEST = 4
 DL_SIGNAL_CHANNELS = (
     "EEG Fpz-Cz",
     "EEG Pz-Oz",
@@ -42,7 +44,7 @@ MLFLOW_ARTIFACT_PATH = os.getenv(
 )
 MODEL_REGISTRY = load_model_registry()
 MODEL_RUN_ID_CHECK_INTERVAL_SECONDS = max(
-    60, int(os.getenv("MODEL_RUN_ID_CHECK_INTERVAL_SECONDS", "86400"))
+    60, int(os.getenv("MODEL_RUN_ID_CHECK_INTERVAL_SECONDS", "172800"))
 )
 logger = logging.getLogger(__name__)
 _model_run_check_lock = threading.Lock()
@@ -77,8 +79,8 @@ class PredictionRequest(BaseModel):
     epochs: List[Any] = Field(
         ...,
         description=(
-            "15 épocas de EEG con 3.000 muestras cada una "
-            "(30 segundos a 100 Hz), expresadas en microvoltios."
+            "Una secuencia de 15 épocas o un lote de hasta "
+            f"{MAX_SEQUENCES_PER_REQUEST} secuencias; cada época tiene 3.000 muestras por canal."
         ),
     )
 
@@ -93,29 +95,33 @@ class PredictionRequest(BaseModel):
     @field_validator("epochs")
     @classmethod
     def validate_epochs(cls, epochs: List[Any]) -> List[Any]:
-        if len(epochs) != SEQUENCE_LENGTH:
-            raise ValueError(f"Se requieren exactamente {SEQUENCE_LENGTH} épocas.")
-        first_epoch = np.asarray(epochs[0])
-        if first_epoch.ndim == 1:
-            if len(epochs) != SEQUENCE_LENGTH:
-                raise ValueError(f"Se requieren exactamente {SEQUENCE_LENGTH} épocas.")
-            if len(epochs[0]) != SAMPLES_PER_EPOCH:
-                raise ValueError(f"Cada época debe contener {SAMPLES_PER_EPOCH} muestras.")
-            raise ValueError(
-                f"TinySleepNet requiere epochs con forma (15, {DL_INPUT_CHANNELS}, 3000)."
-            )
-        elif first_epoch.ndim == 2:
-            n_channels = first_epoch.shape[0]
-            if n_channels == 0 or first_epoch.shape[1] != SAMPLES_PER_EPOCH:
-                raise ValueError(f"Cada canal debe contener {SAMPLES_PER_EPOCH} muestras.")
+        try:
+            array = np.asarray(epochs)
+        except (TypeError, ValueError) as error:
+            raise ValueError("epochs debe ser una secuencia o lote rectangular de épocas.") from error
+
+        if array.ndim == 3:
+            forma = f"(15, {DL_INPUT_CHANNELS}, {SAMPLES_PER_EPOCH})"
+            if array.shape[0] != SEQUENCE_LENGTH:
+                raise ValueError(f"Se requieren exactamente {SEQUENCE_LENGTH} épocas por secuencia.")
+        elif array.ndim == 4:
+            forma = f"(lote, 15, {DL_INPUT_CHANNELS}, {SAMPLES_PER_EPOCH})"
+            if not 1 <= array.shape[0] <= MAX_SEQUENCES_PER_REQUEST:
+                raise ValueError(
+                    f"El lote debe contener entre 1 y {MAX_SEQUENCES_PER_REQUEST} secuencias."
+                )
+            if array.shape[1] != SEQUENCE_LENGTH:
+                raise ValueError(f"Cada secuencia debe contener exactamente {SEQUENCE_LENGTH} épocas.")
         else:
-            raise ValueError("epochs debe tener forma (épocas, muestras) o (épocas, canales, muestras).")
-        for index, epoch in enumerate(epochs):
-            array = np.asarray(epoch)
-            if array.shape != first_epoch.shape or not np.isfinite(array).all():
-                raise ValueError(f"La época {index} tiene una forma inválida o muestras no finitas.")
-        if first_epoch.ndim == 2 and first_epoch.shape[0] != DL_INPUT_CHANNELS:
-            raise ValueError(f"TinySleepNet requiere exactamente {DL_INPUT_CHANNELS} canales.")
+            raise ValueError(
+                "epochs debe tener forma (15, 8, 3000) o "
+                f"(lote, 15, 8, 3000); se recibió {array.shape}."
+            )
+
+        if array.shape[-2:] != (DL_INPUT_CHANNELS, SAMPLES_PER_EPOCH):
+            raise ValueError(f"TinySleepNet requiere epochs con forma {forma}.")
+        if not np.isfinite(array).all():
+            raise ValueError("epochs contiene muestras no finitas.")
         return epochs
 
 
@@ -252,7 +258,7 @@ def validate_local_model_run_id(local_path: Path, artifact_path: str) -> None:
 
 
 @lru_cache(maxsize=8)
-def load_model(checkpoint_path: str, input_channels: int = 1) -> TinySleepNet:
+def load_model(checkpoint_path: str, input_channels: int = DL_INPUT_CHANNELS) -> torch.nn.Module:
     """Carga y conserva en caché los checkpoints usados recientemente."""
 
     path = Path(checkpoint_path)
@@ -271,7 +277,18 @@ def load_model(checkpoint_path: str, input_channels: int = 1) -> TinySleepNet:
         seq_length=SEQUENCE_LENGTH,
         use_rnn=True,
     )
-    model = TinySleepNet(config)
+    emg_weights = checkpoint.get("emg_branch.red.0.weight")
+    if emg_weights is not None:
+        rama_emg = "conv" if emg_weights.ndim == 3 else "mlp"
+        model = TinySleepNetEMG(config, rama=rama_emg)
+        model.uses_emg = True
+    else:
+        conv_weight = checkpoint.get("cnn.block1.conv.weight")
+        if conv_weight is None:
+            raise ValueError("El checkpoint no contiene cnn.block1.conv.weight.")
+        config.input_channels = int(conv_weight.shape[1])
+        model = TinySleepNet(config)
+        model.uses_emg = False
     model.load_state_dict(checkpoint, strict=True)
     model.eval()
     return model
@@ -306,7 +323,7 @@ def health() -> dict:
 
 @app.post("/predict-tinysleepnet", response_model=PredictionResponse)
 def predict(request: PredictionRequest) -> PredictionResponse:
-    """Clasifica las 15 épocas recibidas con el checkpoint seleccionado."""
+    """Clasifica una o varias secuencias de 15 épocas con el checkpoint seleccionado."""
 
     # (épocas, señales + máscaras, muestras) -> entrada TinySleepNet de 8 canales.
     if request.channel_names != list(DL_CHANNEL_NAMES):
@@ -316,38 +333,57 @@ def predict(request: PredictionRequest) -> PredictionResponse:
                     "expected": list(DL_CHANNEL_NAMES)},
         )
     signal_array = np.asarray(request.epochs, dtype=np.float32)
-    input_channels = signal_array.shape[1]
+    if signal_array.ndim == 3:
+        signal_array = signal_array[None, ...]
+    _batch, _sequence_length, input_channels, _samples = signal_array.shape
     if len(request.channel_names) != input_channels:
         raise HTTPException(status_code=422, detail="channel_names no coincide con los canales de epochs.")
     n_signal_channels = len(DL_SIGNAL_CHANNELS)
-    presence = signal_array[:, n_signal_channels:, :]
+    presence = signal_array[:, :, n_signal_channels:, :]
     if not np.all(np.isin(presence, (0.0, 1.0))):
         raise HTTPException(status_code=422, detail="Las marcas de presencia deben ser 0 o 1.")
-    if not np.all(presence == presence[:, :, :1]):
+    if not np.all(presence == presence[:, :, :, :1]):
         raise HTTPException(
             status_code=422,
             detail="Cada marca de presencia debe mantenerse constante en la secuencia.",
         )
     for signal_index in range(n_signal_channels):
-        missing = presence[:, signal_index, 0] == 0.0
-        if np.any(missing) and not np.all(signal_array[missing, signal_index, :] == 0.0):
+        missing = presence[:, :, signal_index, 0] == 0.0
+        signal_values = signal_array[:, :, signal_index, :]
+        if np.any(missing) and not np.all(signal_values[missing] == 0.0):
             raise HTTPException(
                 status_code=422,
                 detail="Una señal marcada como ausente debe enviarse completamente en ceros.",
             )
-    if not np.any(presence[:, :2, 0] == 1.0):
+    eeg_present = np.any(presence[:, :, :2, 0] == 1.0, axis=(1, 2))
+    if not np.all(eeg_present):
         raise HTTPException(status_code=422, detail="Debe llegar al menos un EEG.")
     try:
         model = load_model(str(model_path(request.model_artifact)), input_channels)
     except Exception as error:
         raise model_unavailable(error, request.model_artifact) from error
-    signal = torch.tensor(signal_array, dtype=torch.float32).unsqueeze(0)
+    signal = torch.tensor(signal_array, dtype=torch.float32)
+    if not getattr(model, "uses_emg", False):
+        # Checkpoints flexibles anteriores usan EEG/EOG y sus marcas (6 canales).
+        n_canales_cnn = model.cnn.block1.conv.in_channels
+        if n_canales_cnn == 6 and input_channels == DL_INPUT_CHANNELS:
+            signal = signal[:, :, [0, 1, 2, 4, 5, 6], :]
+        elif n_canales_cnn != input_channels:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "model_unavailable",
+                    "message": "La cantidad de canales del checkpoint no es compatible con la entrada.",
+                    "checkpoint_channels": n_canales_cnn,
+                    "input_channels": input_channels,
+                },
+            )
     with torch.inference_mode():
         result, _ = model.predict_proba(signal)
 
-    probabilities = result["probabilities"].squeeze(0).cpu().tolist()
-    predicted_classes = result["pred_class"].squeeze(0).cpu().tolist()
-    confidences = result["confidence"].squeeze(0).cpu().tolist()
+    probabilities = result["probabilities"].reshape(-1, len(CLASS_NAMES)).cpu().tolist()
+    predicted_classes = result["pred_class"].reshape(-1).cpu().tolist()
+    confidences = result["confidence"].reshape(-1).cpu().tolist()
     predictions = [
         EpochPrediction(
             epoch_index=index,
@@ -361,7 +397,8 @@ def predict(request: PredictionRequest) -> PredictionResponse:
     ]
     return PredictionResponse(
         model_name=request.model_artifact,
-        channel="TinySleepNet-8-canales",
+        channel=("TinySleepNetEMG-8-canales" if getattr(model, "uses_emg", False)
+                 else f"TinySleepNet-{model.cnn.block1.conv.in_channels}-canales"),
         sampling_rate_hz=request.sampling_rate_hz,
         predictions=predictions,
     )
