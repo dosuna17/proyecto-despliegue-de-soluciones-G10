@@ -30,6 +30,7 @@ VARIABLES_ENTORNO: Dict[str, Tuple[Tuple[str, ...], Callable[[str], Any]]] = {
     "SLEEP_STAGING_API_URL": (("api", "url"), str),
     "TABLERO_TIMEOUT_INFERENCIA_S": (("api", "timeout_inferencia_s"), float),
     "TABLERO_SOLICITUDES_PARALELAS": (("api", "solicitudes_paralelas"), int),
+    "TABLERO_SECUENCIAS_POR_SOLICITUD": (("api", "secuencias_por_solicitud"), int),
     "TABLERO_UMBRAL_CONFIANZA": (("interpretacion", "umbral_confianza"), float),
     "TABLERO_TAMANO_MAXIMO_MB": (("carga", "tamano_maximo_mb"), int),
     "TABLERO_CARPETA_DEMOS": (("estudios_demo", "carpeta"), str),
@@ -77,6 +78,8 @@ def _validar(config: Dict[str, Any]) -> None:
         raise ValueError("interpretacion.umbral_confianza debe estar entre 0 y 1.")
     if config["api"]["solicitudes_paralelas"] < 1:
         raise ValueError("api.solicitudes_paralelas debe ser al menos 1.")
+    if not 1 <= config["api"].get("secuencias_por_solicitud", 1) <= 4:
+        raise ValueError("api.secuencias_por_solicitud debe estar entre 1 y 4.")
     if config["recorte"]["margen_min"] < 0:
         raise ValueError("recorte.margen_min no puede ser negativo.")
 

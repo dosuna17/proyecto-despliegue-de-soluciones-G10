@@ -14,6 +14,8 @@ api:
   # Bloques que se envían a la vez. La API atiende varias solicitudes en
   # paralelo; 4 equilibra velocidad y consumo de memoria en una instancia pequeña.
   solicitudes_paralelas: 4
+  # Secuencias independientes por solicitud HTTP; cada secuencia conserva 15 épocas.
+  secuencias_por_solicitud: 4
   # Reintentos ante un fallo de red puntual (no ante errores de validación).
   reintentos: 2
 

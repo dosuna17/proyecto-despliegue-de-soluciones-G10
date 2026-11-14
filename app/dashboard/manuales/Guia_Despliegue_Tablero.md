@@ -103,7 +103,7 @@ Lo que envía el tablero en cada bloque:
                     "presence EOG horizontal", "presence EMG submental"],
   "sampling_rate_hz": 100,
   "signal_unit": "uV",
-  "epochs": "[15][8][3000] en µV, dos decimales; señales no elegidas en ceros y su marca en 0"
+  "epochs": "[lote][15][8][3000] en µV; cada elemento del lote es una secuencia independiente"
 }
 ```
 
@@ -111,11 +111,12 @@ Detalles que conviene saber:
 
 - **No se descartan épocas.** Si el total no es múltiplo de 15, el último bloque
   se superpone con el anterior y solo se usan sus épocas nuevas.
-- Se envían `solicitudes_paralelas` bloques a la vez (4 por defecto). FastAPI
-  atiende los endpoints `def` en un grupo de hilos, así que la API los procesa
-  en paralelo.
-- Cada bloque pesa alrededor de 2 MB en JSON. Una noche de Sleep Cassette
-  (unas 2 600 épocas) son unos 180 bloques.
+- Cada solicitud puede llevar hasta `secuencias_por_solicitud` secuencias
+  independientes (4 por defecto); cada una mantiene sus 15 épocas de contexto.
+- Se envían `solicitudes_paralelas` solicitudes a la vez (4 por defecto).
+  FastAPI atiende los endpoints `def` en un grupo de hilos.
+- Una noche de Sleep Cassette (unas 2 600 épocas) requiere cerca de 44
+  solicitudes con cuatro secuencias por solicitud.
 
 ---
 
@@ -130,6 +131,7 @@ de entorno, sin tocar el código:
 | `SLEEP_STAGING_API_URL` | `api.url` | `http://localhost:8000` | URL de la API. En Docker Compose: `http://api:8000` |
 | `TABLERO_TIMEOUT_INFERENCIA_S` | `api.timeout_inferencia_s` | 120 | Espera máxima por bloque |
 | `TABLERO_SOLICITUDES_PARALELAS` | `api.solicitudes_paralelas` | 4 | Bloques enviados a la vez |
+| `TABLERO_SECUENCIAS_POR_SOLICITUD` | `api.secuencias_por_solicitud` | 4 | Secuencias de 15 épocas agrupadas en cada solicitud (máximo 4) |
 | `TABLERO_UMBRAL_CONFIANZA` | `interpretacion.umbral_confianza` | 0.83 | Umbral de "baja confianza" |
 | `TABLERO_TAMANO_MAXIMO_MB` | `carga.tamano_maximo_mb` | 200 | Tamaño máximo de un EDF subido |
 | `TABLERO_CARPETA_DEMOS` | `estudios_demo.carpeta` | `app/dashboard/estudios_demo` | Carpeta de los estudios de demostración |

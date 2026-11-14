@@ -83,17 +83,28 @@ def predict_tinysleepnet(solicitud: Solicitud) -> Dict[str, Any]:
     if solicitud.channel_names != esperado:
         raise HTTPException(422, {"message": "channel_names debe respetar el orden fijo.", "expected": esperado})
     x = np.asarray(solicitud.epochs, dtype=np.float32)
-    if x.shape != (15, 8, 3000):
-        raise HTTPException(422, f"Forma inválida {x.shape}; se espera (15, 8, 3000).")
-    presencia = x[:, 4:8, 0]
-    if not np.isin(presencia, (0, 1)).all() or not presencia[:, :2].any():
+    if x.ndim == 3:
+        x = x[None, ...]
+    if x.ndim != 4 or not 1 <= x.shape[0] <= 4 or x.shape[1:] != (15, 8, 3000):
+        raise HTTPException(422, f"Forma inválida {x.shape}; se espera (lote de 1-4, 15, 8, 3000).")
+    presencia = x[:, :, 4:8, 0]
+    if not np.isin(presencia, (0, 1)).all() or not np.all(presencia[:, :, :2].any(axis=(1, 2))):
         raise HTTPException(422, "Debe llegar al menos un EEG con marca de presencia.")
+    if not np.all(x[:, :, 4:8, :] == x[:, :, 4:8, :1]):
+        raise HTTPException(422, "Cada marca de presencia debe mantenerse constante en la secuencia.")
     for k in range(4):
-        if presencia[0, k] == 0 and np.any(x[:, k] != 0):
+        faltante = presencia[:, :, k] == 0
+        if np.any(faltante) and np.any(x[:, :, k, :][faltante] != 0):
             raise HTTPException(422, "Una señal marcada como ausente debe enviarse en ceros.")
-    eeg = [k for k in (0, 1) if presencia[0, k] == 1]
-    eog = 2 if presencia[0, 2] == 1 else None
+    predicciones = []
+    for indice_lote, secuencia in enumerate(x):
+        presencia_secuencia = presencia[indice_lote, 0]
+        eeg = [k for k in (0, 1) if presencia_secuencia[k] == 1]
+        eog = 2 if presencia_secuencia[2] == 1 else None
+        predicciones.extend(_respuesta(secuencia, eeg, eog))
+    for indice, prediccion in enumerate(predicciones):
+        prediccion["epoch_index"] = indice
     return {"model_name": "simulado", "channel": "TinySleepNet-8-canales", "sampling_rate_hz": 100,
-            "predictions": _respuesta(x, eeg, eog)}
+            "predictions": predicciones}
 
 

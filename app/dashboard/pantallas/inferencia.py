@@ -64,7 +64,7 @@ def mostrar(config: Dict[str, Any], cliente: ClienteAPI) -> None:
     def progreso(hechos: int, total: int) -> None:
         transcurrido = time.perf_counter() - comienzo
         restante = transcurrido / hechos * (total - hechos) if hechos else 0
-        texto = f"Clasificando: bloque {hechos} de {total}"
+        texto = f"Clasificando: lote {hechos} de {total}"
         if hechos >= 2 and restante > 5:
             texto += f" · faltan unos {max(1, round(restante / 60))} min" if restante >= 60 else f" · faltan unos {restante:.0f} s"
         barra.progress(hechos / total, text=texto)

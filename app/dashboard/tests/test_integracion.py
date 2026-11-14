@@ -127,6 +127,27 @@ def test_clasifica_todas_las_epocas_con_cada_combinacion(config, monkeypatch, re
     assert avance[-1][0] == avance[-1][1]
 
 
+def test_agrupa_cuatro_secuencias_en_una_solicitud(config, monkeypatch):
+    cliente = _cliente(config, monkeypatch)
+    modelo = cliente.info_modelo()
+    llamadas = []
+    post_original = cliente.sesion.post
+
+    def post_contabilizado(url, json=None, timeout=None):
+        llamadas.append(np.asarray(json["epochs"]).shape)
+        return post_original(url, json=json, timeout=timeout)
+
+    cliente.sesion.post = post_contabilizado
+    tiempo = np.arange(60 * 3000) / 100
+    senales = {"EEG Fpz-Cz": (20 * np.sin(2 * np.pi * 10 * tiempo)).astype(np.float32)}
+
+    resultado = cliente.clasificar(senales, ["EEG Fpz-Cz"], modelo, 60)
+
+    assert len(llamadas) == 1
+    assert llamadas[0] == (4, 15, 8, 3000)
+    assert not np.any(resultado.estadios == "?")
+
+
 def test_error_de_validacion_llega_en_lenguaje_llano(config, monkeypatch, registro):
     cliente = _cliente(config, monkeypatch)
     modelo = cliente.info_modelo()
