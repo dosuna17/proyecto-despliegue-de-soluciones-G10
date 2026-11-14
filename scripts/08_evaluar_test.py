@@ -43,6 +43,10 @@ Umbrales POR CLASE (idea del profesor Mario; metas por clase tomadas de SleepFM,
     - Clase INALCANZABLE (ningun umbral llega a su meta): tau_c = None y TODAS las epocas
       predichas como esa clase van a revision (cobertura de la clase = 0). Queda marcada en el JSON y en la tabla.
     - El umbral global de 82.6 % (acuerdo entre expertos) se mantiene como criterio secundario, sin cambios.
+    - En el test, los umbrales GLOBALES de cada modelo (por clase y el de 82.6 %) se verifican con TODAS sus
+      combinaciones juntas, igual que se calcularon en validacion: resultados_test.json -> modelos.<modelo>.
+      umbral_global_junto y filas GLOBAL de umbrales_clase.csv (es la cifra que verifica los umbrales del tablero).
+      Dentro de cada combinacion, el bloque 'global' son esos mismos umbrales aplicados a esa combinacion sola.
     - Se reporta la exactitud REAL de lo aceptado por clase en validacion y en test (en N1 la meta queda ~51 %:
       casi la mitad de lo aceptado puede estar mal; es lo que pide la meta y se muestra tal cual).
     Para fijarlos y revisarlos sin tocar el test: --solo-umbrales (no carga modelos ni datos).
@@ -126,8 +130,8 @@ REFERENCIA_SLEEPFM_SENSIBILIDAD = {"W": 0.875, "N1": 0.560, "N2": 0.808, "N3": 0
 DELTAS = (0.0, 0.05, 0.10)          # puntos que se restan a la referencia, todos reportados en validacion
 DELTA_POR_DEFECTO = 0.05
 JUSTIFICACION_DELTA_POR_DEFECTO = (
-    "delta = 5 puntos, propuesto por el equipo: relaja la referencia de otra metrica (sensibilidad de SleepFM) "
-    "sin volverla trivial; se fija con la validacion antes del test y el test solo verifica.")
+    "delta = 5 puntos: el mayor de {0, 5, 10} con el que la exactitud global de lo aceptado (todas las clases "
+    "juntas) sigue >= 82.6 % en la validacion; se fija con la validacion antes del test y el test solo verifica.")
 REGLA_INALCANZABLE = ("Si ninguna confianza (0.00-0.99) alcanza la meta de una clase en validacion, esa clase queda "
                       "'inalcanzable': umbral = None y TODAS las epocas predichas como esa clase van a revision.")
 NOTA_METRICA = ("La referencia de SleepFM es sensibilidad por clase real (fila); la meta de este modelo es la "
@@ -632,6 +636,35 @@ def config_clases(args) -> Dict:
             "objetivo_global_secundario": OBJETIVO_EXACTITUD}
 
 
+def verificar_global_junto(preds: Sequence[Dict[str, np.ndarray]], sujeto_de_rec: np.ndarray,
+                           umb: Optional[Dict], delta: float) -> Optional[Dict]:
+    """Verifica en test los umbrales GLOBALES del modelo (por clase y el de 82.6 %) con todas sus combinaciones
+    juntas, igual que se calcularon en validacion. IC95 por sujeto: las epocas de un sujeto de todas las combinaciones
+    cuentan juntas en el remuestreo."""
+    if not umb or not umb.get("por_clase") or not umb["por_clase"]["global"] or not preds:
+        return None
+    pool = {k: np.concatenate([p[k] for p in preds]) for k in ("probs", "y_true", "rec_idx")}
+    b = _bloque_elegido(umb["por_clase"]["global"], delta)
+    g = umb.get("global")
+    return {"nota": "todas las combinaciones del modelo juntas (igual que en validacion)",
+            "n_combinaciones": len(preds), "n_epocas": int(len(pool["y_true"])),
+            "por_clase": {"delta": b["delta"], "validacion": b,
+                          "test": evaluar_umbrales_clase(pool, sujeto_de_rec, {c: v["umbral"] for c, v in b["clases"].items()})},
+            "umbral_global_82_6": ({"validacion": g["validacion"], "test": evaluar_umbral(pool, sujeto_de_rec, g["umbral"])}
+                                   if g and g["umbral"] is not None else None)}
+
+
+def _imprimir_global_junto(modelo: str, junto: Dict) -> None:
+    t = junto["por_clase"]["test"]
+    partes = []
+    for c in CLASES:
+        x = t["clases"][c]
+        partes.append(f"{c} umbral {fmt(x['umbral'], 2) or 'None'} cob {fmt(x['cobertura'], 2) or '-'} exac {fmt(x['exactitud_aceptadas']) or '-'}")
+    g = t["global"]
+    print(f"  [{modelo}] verificacion global (todas las combinaciones juntas, {junto['n_epocas']} epocas): "
+          + " | ".join(partes) + f" | global cob {fmt(g['cobertura'])} exac {fmt(g['exactitud_aceptadas'])}")
+
+
 def _bloque_elegido(por_delta: Optional[Dict], delta: float) -> Optional[Dict]:
     return None if not por_delta else por_delta[_clave_delta(delta)]
 
@@ -860,6 +893,7 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
         recs = recsE if info.get("emg") else recs3
         combos = [combinacion_por_nombre(c, posiciones) for c in info["combinaciones"]]
         resultados: Dict[str, Dict] = {}
+        preds_modelo: List[Dict[str, np.ndarray]] = []
         t0 = time.time()
         for combo in combos:
             ruta_npz = salida / f"probs_{nombre}__{combo[0]}.npz"
@@ -873,6 +907,7 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
                 tmp = ruta_npz.with_name(ruta_npz.stem + ".tmp.npz")
                 np.savez_compressed(tmp, **pred)
                 tmp.replace(ruta_npz)
+            preds_modelo.append(pred)
             umb = umbrales.get(nombre)
             umb_c = {"combinacion": (umb["combinaciones"].get(combo[0]) if umb else None),
                      "global": (umb["global"] if umb else None)}
@@ -885,11 +920,15 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
             print(f"  {nombre:36s} {combo[0]:52s} F1 macro {r['macro_f1']:.4f} "
                   f"[{r['macro_f1_ic95'][0]:.3f}, {r['macro_f1_ic95'][1]:.3f}] | kappa {r['cohens_kappa']:.4f} "
                   f"| por persona {pp['media']:.3f} ± {pp['desviacion']:.3f}")
+        junto = verificar_global_junto(preds_modelo, sujeto_de_rec, umbrales.get(nombre), args.delta)
+        if junto:
+            _imprimir_global_junto(nombre, junto)
         resumen["modelos"][nombre] = {"n_epocas_entrenamiento": info["n_epocas"], "emg": info.get("emg"),
                                       "sin_lstm": bool(info.get("sin_lstm")),
                                       "noche_completa": info.get("noche_completa"),
                                       "epocas_cv": info.get("epocas_cv"),
                                       "umbrales_validacion": umbrales.get(nombre),
+                                      "umbral_global_junto": junto,
                                       "combinaciones": resultados}
         figura_matrices(nombre, resultados, figuras / f"test_matriz_confusion_{nombre}", etiqueta_fig)
         figura_cobertura(nombre, resultados, figuras / f"test_cobertura_{nombre}", etiqueta_fig)
@@ -924,9 +963,8 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
             for m, d in resumen["modelos"].items():
                 u = umbrales[m]["por_clase"]
                 if u["global"]:
-                    # mismo test para todas las combinaciones: se reporta el global como el de la primera combinacion
-                    primera = next(iter(d["combinaciones"].values()))
-                    tg = ((primera["umbral_por_clase"] or {}).get("global") or {}).get("test")
+                    # GLOBAL = todas las combinaciones del modelo juntas (como en validacion)
+                    tg = ((d.get("umbral_global_junto") or {}).get("por_clase") or {}).get("test")
                     _filas_clases_csv(f, m, "GLOBAL", u["global"], args.delta, tg and tg["clases"])
                 for c, por_delta in u["combinaciones"].items():
                     if por_delta:
