@@ -9,6 +9,8 @@ Pasos, cada uno por separado:
      y es donde la API (configs/models/model_registry.yaml) los busca.
   3. --test-carpeta <carpeta> --cv-run-id <id>: agrega al mismo run los resultados del test
      (scripts/08_evaluar_test.py). Solo funciona si el test ya se evaluo (existe TEST_YA_EJECUTADO.json).
+     Incluye los umbrales por clase del modelo verificados con todas sus combinaciones juntas
+     (metricas test_clase_*__<clase>) y umbrales_clase.csv.
   4. --campeon --cv-run-id <id>: marca ese run con champion=true y quita la etiqueta a TODOS los demas
      runs del experimento. Es lo que decide que modelo carga la API. Solo los modelos flexibles pueden
      ser campeon (no los controles ni la ablacion), y el campeon tiene que cumplir el criterio de abajo.
@@ -212,7 +214,33 @@ def subir_test(carpeta_test: Path, args) -> None:
                 mlflow.log_metrics({f"test_umbral_global__{nombre}": ug["umbral"],
                                     f"test_cobertura_umbral_global__{nombre}": ug["cobertura"],
                                     f"test_exactitud_umbral_global__{nombre}": ug["exactitud_aceptadas"]})
-        for nombre_archivo in ["resultados_test.json", "tabla_test.csv", "por_persona.csv"]:
+        junto = resultados["modelos"][args.run].get("umbral_global_junto")
+        if junto:                                   # umbrales por clase del modelo, todas las combinaciones juntas
+            pc = junto["por_clase"]
+            mlflow.log_param("test_delta_umbrales_clase", pc["delta"])
+            inalcanzables = []
+            for c, x in pc["test"]["clases"].items():
+                v = pc["validacion"]["clases"][c]
+                if v.get("inalcanzable"):
+                    inalcanzables.append(c)
+                ic = x.get("exactitud_ic95") or [None, None]
+                valores = {f"test_clase_meta__{c}": v.get("meta_exactitud"),
+                           f"test_clase_umbral__{c}": x.get("umbral"),
+                           f"test_clase_cobertura__{c}": x.get("cobertura"),
+                           f"test_clase_exactitud__{c}": x.get("exactitud_aceptadas"),
+                           f"test_clase_exactitud_ic95_bajo__{c}": ic[0],
+                           f"test_clase_exactitud_ic95_alto__{c}": ic[1]}
+                mlflow.log_metrics({k: float(val) for k, val in valores.items() if val is not None})
+            g = pc["test"]["global"]
+            mlflow.log_metrics({k: float(val) for k, val in {
+                "test_clases_cobertura_global": g.get("cobertura"),
+                "test_clases_exactitud_global": g.get("exactitud_aceptadas")}.items() if val is not None})
+            mlflow.set_tag("test_clases_inalcanzables", ",".join(inalcanzables) or "ninguna")
+            g82 = (junto.get("umbral_global_82_6") or {}).get("test")
+            if g82 and g82.get("exactitud_aceptadas") is not None:
+                mlflow.log_metrics({"test_umbral_82_6_junto_cobertura": float(g82["cobertura"]),
+                                    "test_umbral_82_6_junto_exactitud": float(g82["exactitud_aceptadas"])})
+        for nombre_archivo in ["resultados_test.json", "tabla_test.csv", "por_persona.csv", "umbrales_clase.csv"]:
             if (carpeta_test / nombre_archivo).exists():
                 mlflow.log_artifact(str(carpeta_test / nombre_archivo), artifact_path="test")
         mlflow.log_artifact(str(candado), artifact_path="test")
