@@ -37,11 +37,10 @@ Umbrales POR CLASE (idea del profesor Mario; metas por clase tomadas de SleepFM,
       La referencia se usa solo como orden de dificultad de las clases (N1 mucho mas dificil que REM), no como
       un valor equivalente.
     - tau_c = menor umbral (rejilla 0.00-0.99) cuya precision de las epocas aceptadas predichas como c, medida
-      en la VALIDACION (probabilidades de los 5 pliegues de la CV), llega a meta_c, con al menos
-      MIN_ACEPTADAS_VALIDACION epocas aceptadas (para que no lo decida un puñado de epocas).
+      en la VALIDACION (probabilidades de los 5 pliegues de la CV), llega a meta_c.
     - delta = 0, 5 y 10 puntos se reportan SIEMPRE en validacion (cobertura y exactitud por clase) y se escribe
       cual se usa (--delta, por defecto 5) ANTES del test. El test solo verifica el delta elegido.
-    - Clase INALCANZABLE (ningun umbral llega a su meta con el soporte minimo): tau_c = None y TODAS las epocas
+    - Clase INALCANZABLE (ningun umbral llega a su meta): tau_c = None y TODAS las epocas
       predichas como esa clase van a revision (cobertura de la clase = 0). Queda marcada en el JSON y en la tabla.
     - El umbral global de 82.6 % (acuerdo entre expertos) se mantiene como criterio secundario, sin cambios.
     - Se reporta la exactitud REAL de lo aceptado por clase en validacion y en test (en N1 la meta queda ~51 %:
@@ -126,13 +125,11 @@ N_PLIEGUES = 5
 REFERENCIA_SLEEPFM_SENSIBILIDAD = {"W": 0.875, "N1": 0.560, "N2": 0.808, "N3": 0.862, "REM": 0.937}
 DELTAS = (0.0, 0.05, 0.10)          # puntos que se restan a la referencia, todos reportados en validacion
 DELTA_POR_DEFECTO = 0.05
-MIN_ACEPTADAS_VALIDACION = 100      # un umbral por clase solo vale si deja al menos tantas epocas aceptadas en validacion
 JUSTIFICACION_DELTA_POR_DEFECTO = (
     "delta = 5 puntos, propuesto por el equipo: relaja la referencia de otra metrica (sensibilidad de SleepFM) "
     "sin volverla trivial; se fija con la validacion antes del test y el test solo verifica.")
-REGLA_INALCANZABLE = ("Si ninguna confianza (0.00-0.99) alcanza la meta de una clase con al menos "
-                      f"{MIN_ACEPTADAS_VALIDACION} epocas aceptadas en validacion, esa clase queda 'inalcanzable': "
-                      "umbral = None y TODAS las epocas predichas como esa clase van a revision.")
+REGLA_INALCANZABLE = ("Si ninguna confianza (0.00-0.99) alcanza la meta de una clase en validacion, esa clase queda "
+                      "'inalcanzable': umbral = None y TODAS las epocas predichas como esa clase van a revision.")
 NOTA_METRICA = ("La referencia de SleepFM es sensibilidad por clase real (fila); la meta de este modelo es la "
                 "exactitud (precision) de las epocas aceptadas por clase predicha. No son la misma metrica.")
 RUTA_CANDADO_POR_DEFECTO = os.environ.get("TEST_LOCK_PATH") or str(RAIZ / "TEST_YA_EJECUTADO.json")
@@ -381,13 +378,13 @@ def curvas_por_clase(probs: np.ndarray, y_true: np.ndarray) -> Dict[str, Dict]:
 
 
 def bloque_umbrales_clase(curvas: Dict[str, Dict], n_total: int, delta: float) -> Dict:
-    """Umbral por clase para un delta: menor umbral con precision >= referencia - delta y soporte minimo."""
+    """Umbral por clase para un delta: menor umbral con precision >= referencia - delta."""
     clases, acc_tot, ok_tot = {}, 0, 0
     for c in CLASES:
         cv = curvas[c]
         meta = round(REFERENCIA_SLEEPFM_SENSIBILIDAD[c] - delta, 4)
         n_acc, n_ok = cv["n_aceptadas"], cv["n_aciertos"]
-        valido = n_acc >= MIN_ACEPTADAS_VALIDACION
+        valido = n_acc > 0                       # la exactitud solo existe si hay epocas aceptadas
         prec = np.where(n_acc > 0, n_ok / np.maximum(n_acc, 1), 0.0)
         cumple = np.flatnonzero(valido & (prec >= meta))
         if len(cumple):
@@ -399,10 +396,10 @@ def bloque_umbrales_clase(curvas: Dict[str, Dict], n_total: int, delta: float) -
             clases[c] = {"referencia_sleepfm_sensibilidad": REFERENCIA_SLEEPFM_SENSIBILIDAD[c], "meta_exactitud": meta,
                          "umbral": tau, "inalcanzable": False, "validacion": val}
         else:
-            mejor = float(prec[valido].max()) if valido.any() else None
+            mejor = float(prec[valido].max()) if valido.any() else None     # la mas alta que se alcanza, aunque no llegue a la meta
             clases[c] = {"referencia_sleepfm_sensibilidad": REFERENCIA_SLEEPFM_SENSIBILIDAD[c], "meta_exactitud": meta,
                          "umbral": None, "inalcanzable": True,
-                         "mejor_exactitud_con_soporte": mejor,
+                         "mejor_exactitud_alcanzada": mejor,
                          "validacion": {"n_predichas": cv["n_predichas"], "n_aceptadas": 0, "cobertura": 0.0,
                                         "exactitud_aceptadas": None}}
     return {"delta": delta, "clases": clases,
@@ -631,7 +628,7 @@ def figura_por_persona(modelo: str, resultados: Dict[str, Dict], ruta: Path, eti
 def config_clases(args) -> Dict:
     return {"delta_elegido": args.delta, "justificacion_delta": args.justificacion_delta, "deltas_reportados": list(DELTAS),
             "referencia_sleepfm_sensibilidad": REFERENCIA_SLEEPFM_SENSIBILIDAD, "nota_metrica": NOTA_METRICA,
-            "regla_clase_inalcanzable": REGLA_INALCANZABLE, "min_aceptadas_validacion": MIN_ACEPTADAS_VALIDACION,
+            "regla_clase_inalcanzable": REGLA_INALCANZABLE,
             "objetivo_global_secundario": OBJETIVO_EXACTITUD}
 
 
