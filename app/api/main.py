@@ -319,6 +319,16 @@ def predict(request: PredictionRequest) -> PredictionResponse:
         model = load_model(str(model_path(request.model_artifact)), input_channels)
     except Exception as error:
         raise model_unavailable(error, request.model_artifact) from error
+    emg_present = np.any(presence[:, :, 3, 0] == 1.0)
+    if emg_present and not getattr(model, "uses_emg", False):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "unsupported_signal",
+                "message": "El modelo desplegado no usa EMG; envíe el canal EMG como ausente.",
+                "channel": "EMG submental",
+            },
+        )
     signal = torch.tensor(signal_array, dtype=torch.float32)
     if not getattr(model, "uses_emg", False):
         # Checkpoints flexibles anteriores usan EEG/EOG y sus marcas (6 canales).
