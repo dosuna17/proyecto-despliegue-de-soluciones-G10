@@ -13,9 +13,9 @@ services:
       MLFLOW_TRACKING_USERNAME: ${MLFLOW_TRACKING_USERNAME:-}
       MLFLOW_TRACKING_PASSWORD: ${MLFLOW_TRACKING_PASSWORD:-}
       MLFLOW_HTTP_REQUEST_TIMEOUT: ${MLFLOW_HTTP_REQUEST_TIMEOUT:-15}
-      MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-modelo_final/flexible_final.pth}
-      MODEL_PATH: ${MODEL_PATH:-}
-      MODEL_RUN_ID_CHECK_INTERVAL_SECONDS: ${MODEL_RUN_ID_CHECK_INTERVAL_SECONDS:-172800}
+      MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-modelo_final/flexible_emg_mlp_final.pth}
+      MODEL_USE_MLFLOW: ${MODEL_USE_MLFLOW:-false}
+      MODEL_PATH: ${MODEL_PATH:-/models/flexible_final.pth}
     volumes:
       - ${MODEL_DIR:-./modelos}:${MODEL_MOUNT_PATH:-/models}:ro
     restart: unless-stopped

@@ -142,7 +142,7 @@ Cada etapa tiene un comando y su configuración en `configs/`. Cada corrida qued
 
 ### Registrar en MLflow y marcar el modelo campeón
 
-La API no recibe archivos: busca en MLflow el último run `tinysleepnet_flexible_cv` con la etiqueta `champion=true` y la carpeta `modelo_final/flexible_final.pth` (ver `configs/models/model_registry.yaml`). Por eso los pesos, las métricas de validación cruzada y las de test viven en **un mismo run**. Cuatro comandos, siempre con `MLFLOW_TRACKING_URI` definida en el entorno:
+La API no recibe archivos. Su fuente del checkpoint se configura con `MODEL_USE_MLFLOW`: en `true`, resuelve el run publicado en MLflow y descarga el artefacto configurado en `MLFLOW_ARTIFACT_PATH`; en `false`, usa el checkpoint descargado indicado por `MODEL_PATH` (por defecto, `/models/flexible_final.pth` en Docker) y no consulta MLflow. La resolución desde MLflow usa el experimento y las etiquetas configuradas en `configs/models/model_registry.yaml`, sin depender del nombre del run. Cuatro comandos para registrar el modelo, siempre con `MLFLOW_TRACKING_URI` definida en el entorno:
 
 ```bash
 # 1. Validación cruzada: crea el run y escribe su run_id
@@ -167,7 +167,8 @@ Los pasos 2 a 4 se pueden pedir en un solo comando. `--run` es `flexible`, `flex
 | Parámetro | Dónde | Para qué |
 |---|---|---|
 | `SLEEP_STAGING_API_URL` | `.env` | Dirección de la API que usa el tablero |
-| `MODEL_PATH` | `.env` | Ruta del modelo dentro de la imagen de la API |
+| `MODEL_USE_MLFLOW` | `.env` | `true` busca y descarga el modelo desde MLflow; `false` carga el checkpoint local de `MODEL_PATH` |
+| `MODEL_PATH` | `.env` | Ruta del checkpoint local (requerido con `MODEL_USE_MLFLOW=false`) |
 | `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD` | `.env` | Servidor de MLflow y credenciales de acceso |
 | Hiperparámetros de TinySleepNet | [`configs/models/tinysleepnet.yaml`](configs/models/tinysleepnet.yaml) | Semilla, tamaño de secuencia y de lote, tasa de aprendizaje, parada temprana |
 | Umbral de baja confianza, estudios de demostración, tamaño máximo de carga | <!-- PENDIENTE (María José) --> `configs/app.yaml` | Comportamiento del tablero |

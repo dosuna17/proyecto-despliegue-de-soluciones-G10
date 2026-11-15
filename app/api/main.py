@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 import json
 import logging
-import threading
-import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Literal
@@ -40,22 +38,13 @@ DL_PRESENCE_CHANNELS = tuple(f"presence {name}" for name in DL_SIGNAL_CHANNELS)
 DL_CHANNEL_NAMES = DL_SIGNAL_CHANNELS + DL_PRESENCE_CHANNELS
 DL_INPUT_CHANNELS = len(DL_CHANNEL_NAMES)
 MLFLOW_ARTIFACT_PATH = os.getenv(
-    "MLFLOW_ARTIFACT_PATH", "modelo_final/flexible_final.pth"
+    "MLFLOW_ARTIFACT_PATH", "modelo_final/flexible_emg_mlp_final.pth"
 )
 MODEL_REGISTRY = load_model_registry()
-MODEL_RUN_ID_CHECK_INTERVAL_SECONDS = max(
-    60, int(os.getenv("MODEL_RUN_ID_CHECK_INTERVAL_SECONDS", "172800"))
-)
-logger = logging.getLogger(__name__)
-_model_run_check_lock = threading.Lock()
-_model_run_check_last_at = 0.0
-_model_run_check_status: dict[str, Any] = {
-    "status": "not_checked",
-    "local_run_id": None,
-    "latest_run_id": None,
-    "checked_at": None,
-    "message": None,
+MODEL_USE_MLFLOW = os.getenv("MODEL_USE_MLFLOW", "false").strip().lower() in {
+    "1", "true", "yes", "on"
 }
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Sleep Stage Classification API", version="0.3.0")
 
@@ -181,11 +170,16 @@ def configured_model_reference(client: MlflowClient, artifact_path: str) -> dict
 
 
 def model_path(artifact_path: str) -> Path:
-    """Resuelve el modelo local o descarga el artefacto desde MLflow."""
+    """Usa el checkpoint local o resuelve y descarga el modelo desde MLflow."""
 
     local_path = configured_local_model_path()
-    if local_path is not None and artifact_path == MLFLOW_ARTIFACT_PATH:
-        validate_local_model_run_id(local_path, artifact_path)
+    if not MODEL_USE_MLFLOW:
+        if local_path is None:
+            raise FileNotFoundError(
+                "MODEL_USE_MLFLOW=false requiere configurar MODEL_PATH al checkpoint descargado."
+            )
+        if artifact_path != MLFLOW_ARTIFACT_PATH:
+            raise ValueError("El modo local solo admite el artefacto de modelo predeterminado.")
         return local_path
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
@@ -195,66 +189,6 @@ def model_path(artifact_path: str) -> Path:
         artifact_path=reference["artifact_path"],
     )
     return Path(downloaded_path)
-
-
-def validate_local_model_run_id(local_path: Path, artifact_path: str) -> None:
-    """Compara periódicamente el run local registrado con el último run de MLflow.
-
-    La comprobación no bloquea inferencias si MLflow no está disponible y nunca
-    reemplaza el checkpoint local. El run_id local se guarda en un JSON hermano
-    del checkpoint (por ejemplo, flexible_final.pth.metadata.json).
-    """
-    global _model_run_check_last_at
-
-    now = time.monotonic()
-    if now - _model_run_check_last_at < MODEL_RUN_ID_CHECK_INTERVAL_SECONDS:
-        return
-    if not _model_run_check_lock.acquire(blocking=False):
-        return
-    try:
-        now = time.monotonic()
-        if now - _model_run_check_last_at < MODEL_RUN_ID_CHECK_INTERVAL_SECONDS:
-            return
-
-        metadata_path = Path(f"{local_path}.metadata.json")
-        local_run_id = None
-        if metadata_path.is_file():
-            with metadata_path.open(encoding="utf-8") as metadata_file:
-                local_run_id = json.load(metadata_file).get("run_id")
-
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        latest_run_id = configured_model_reference(
-            MlflowClient(), artifact_path
-        )["run_id"]
-        if not local_run_id:
-            status = "local_run_id_missing"
-            message = f"Falta registrar el run_id local en {metadata_path}."
-        elif local_run_id == latest_run_id:
-            status = "match"
-            message = None
-        else:
-            status = "mismatch"
-            message = "El checkpoint local no corresponde al último run publicado en MLflow."
-
-        _model_run_check_status.update(
-            status=status,
-            local_run_id=local_run_id,
-            latest_run_id=latest_run_id,
-            checked_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            message=message,
-        )
-        if status != "match":
-            logger.warning("Verificación de run_id del modelo: %s", message)
-    except Exception as error:
-        _model_run_check_status.update(
-            status="check_failed",
-            checked_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            message=str(error),
-        )
-        logger.warning("No se pudo verificar el run_id del modelo local: %s", error)
-    finally:
-        _model_run_check_last_at = time.monotonic()
-        _model_run_check_lock.release()
 
 
 @lru_cache(maxsize=8)
@@ -310,13 +244,36 @@ def model_unavailable(detail: Exception, artifact_path: str) -> HTTPException:
 def health() -> dict:
     """Informa la configuración usada para resolver modelos."""
 
+    run_id = None
+    run_name = None
+    if MODEL_USE_MLFLOW:
+        try:
+            mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+            reference = configured_model_reference(MlflowClient(), MLFLOW_ARTIFACT_PATH)
+            run_id = reference["run_id"]
+            run_name = reference.get("run_name") or None
+        except Exception as error:
+            logger.warning("No se pudo resolver el run activo para /health: %s", error)
+    else:
+        local_path = configured_local_model_path()
+        metadata_path = Path(f"{local_path}.metadata.json") if local_path else None
+        if metadata_path and metadata_path.is_file():
+            try:
+                with metadata_path.open(encoding="utf-8") as metadata_file:
+                    metadata = json.load(metadata_file)
+                run_id = metadata.get("run_id")
+                run_name = metadata.get("run_name")
+            except (OSError, json.JSONDecodeError):
+                logger.warning("No se pudo leer metadata del checkpoint local: %s", metadata_path)
+
     return {
         "status": "healthy",
         "mlflow_tracking_uri": MLFLOW_TRACKING_URI,
         "default_model_artifact": MLFLOW_ARTIFACT_PATH,
         "local_model_path": str(configured_local_model_path() or ""),
-        "model_run_id_check_interval_seconds": MODEL_RUN_ID_CHECK_INTERVAL_SECONDS,
-        "model_run_id_validation": dict(_model_run_check_status),
+        "model_use_mlflow": MODEL_USE_MLFLOW,
+        "model_run_id": run_id,
+        "model_run_name": run_name,
         "sequence_length": SEQUENCE_LENGTH,
     }
 
