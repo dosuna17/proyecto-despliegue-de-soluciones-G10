@@ -20,10 +20,8 @@ from src.data.segmentation import CLASS_NAMES
 
 def _payload() -> dict:
     epochs = np.zeros((15, 8, 3000), dtype=np.float32)
-    epochs[:, 3, :] = 1.0
     epochs[:, 4, :] = 1.0
     epochs[:, 5, :] = 1.0
-    epochs[:, 7, :] = 1.0
     return {
         "channel_names": api_main.DL_CHANNEL_NAMES,
         "sampling_rate_hz": 100,
@@ -34,7 +32,7 @@ def _payload() -> dict:
 
 def test_predict_returns_a_prediction_for_each_epoch(tmp_path, monkeypatch) -> None:
     checkpoint = tmp_path / "tinysleepnet_final_eeg_eog.pth.pth"
-    model = TinySleepNet(TinySleepNetConfig(input_channels=8))
+    model = TinySleepNet(TinySleepNetConfig(input_channels=6))
     torch.save(model.state_dict(), checkpoint)
     monkeypatch.setenv("MODEL_PATH", str(checkpoint))
     load_model.cache_clear()
@@ -46,6 +44,25 @@ def test_predict_returns_a_prediction_for_each_epoch(tmp_path, monkeypatch) -> N
     assert len(body["predictions"]) == 15
     assert set(body["predictions"][0]["probabilities"]) == {"W", "N1", "N2", "N3", "REM"}
     assert abs(sum(body["predictions"][0]["probabilities"].values()) - 1) < 1e-5
+
+
+def test_predict_rejects_emg_when_checkpoint_does_not_use_it(monkeypatch) -> None:
+    class ModeloSinEMG:
+        uses_emg = False
+        cnn = SimpleNamespace(block1=SimpleNamespace(conv=SimpleNamespace(in_channels=6)))
+
+    payload = _payload()
+    epochs = np.asarray(payload["epochs"], dtype=np.float32)
+    epochs[:, 3, :] = 1.0
+    epochs[:, 7, :] = 1.0
+    payload["epochs"] = epochs.tolist()
+    monkeypatch.setattr(api_main, "model_path", lambda artifact: "fake-checkpoint.pth")
+    monkeypatch.setattr(api_main, "load_model", lambda *args: ModeloSinEMG())
+
+    response = TestClient(app).post("/predict-tinysleepnet", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unsupported_signal"
 
 
 def test_predict_rejects_an_invalid_epoch_count() -> None:
@@ -160,6 +177,7 @@ def test_resolve_latest_model_artifact_uses_run_name_and_artifact() -> None:
 
     assert result == {
         "run_id": "older-with-artifact",
+        "run_name": "model-run",
         "artifact_path": "models/model.pth",
     }
     assert search_kwargs["run_view_type"] == ViewType.ACTIVE_ONLY
@@ -167,6 +185,7 @@ def test_resolve_latest_model_artifact_uses_run_name_and_artifact() -> None:
 
 def test_predict_reports_a_missing_model(monkeypatch) -> None:
     monkeypatch.setenv("MODEL_PATH", "/does/not/exist.pth")
+    monkeypatch.setattr(api_main, "MODEL_USE_MLFLOW", False)
     load_model.cache_clear()
 
     response = TestClient(app).post("/predict-tinysleepnet", json=_payload())
