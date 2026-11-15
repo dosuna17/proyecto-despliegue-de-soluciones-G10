@@ -197,15 +197,18 @@ def _visor_senal(config, registro, resultado, seleccion) -> None:
         st.markdown(f"**Época {actual + 1:,} · {hora_epoca(registro.inicio, actual, duracion_epoca, True)}**".replace(",", "."))
         c1, c2, c3 = st.columns(3)
         c1.markdown(f"Clasificación del modelo  \n**{textos.NOMBRES_ESTADIO.get(estadio, estadio)}**")
-        c2.markdown(
-            f"Confianza  \n**{confianza:.0%}**" + (" · ⚠ conviene revisarla" if confianza < umbral else ""),
-            help=textos.AYUDA["confianza"],
-        )
-        if segunda is not None:
+        if estadio == "?":
+            c2.markdown("Confianza  \n**—**")
+            c3.markdown("Sin clasificar")
+        else:
             c3.markdown(
                 f"Segunda opción del modelo  \n**{textos.NOMBRES_ESTADIO.get(segunda, segunda)}** "
-                f"({probabilidades[orden[1]]:.0%})",
-                help=textos.AYUDA["segunda_opcion"],
+                f"({probabilidades[orden[1]]:.0%})" if segunda is not None else "Segunda opción  \n**—**",
+                help=textos.AYUDA["segunda_opcion"] if segunda is not None else None,
+            )
+            c2.markdown(
+                f"Confianza  \n**{confianza:.0%}**" + (" · ⚠ conviene revisarla" if confianza < umbral else ""),
+                help=textos.AYUDA["confianza"],
             )
         if registro.tiene_hipnograma:
             experto = registro.etiquetas_experto[actual]
@@ -247,6 +250,11 @@ def mostrar(config: Dict[str, Any]) -> None:
     cabecera, boton = st.columns([4, 1])
     cabecera.subheader("Resultado del análisis", anchor=False)
     boton.button("Analizar otro registro", on_click=reiniciar, use_container_width=True)
+    if np.any(np.asarray(resultado.estadios, dtype=object) == "?"):
+        st.caption(
+            "Las épocas «?» quedaron sin clasificar porque están fuera del tramo "
+            "recortado o no completan una secuencia de 15 épocas."
+        )
 
     _ficha(config, registro, seleccion, modelo, ventana, indicadores, n_total)
     _indicadores(config, registro, indicadores)

@@ -70,8 +70,14 @@ def mostrar(config: Dict[str, Any], cliente: ClienteAPI) -> None:
         barra.progress(hechos / total, text=texto)
 
     try:
-        pasos.markdown("① Clasificando cada época con el modelo  \n② Ubicando el periodo de sueño  \n③ Calculando los indicadores")
-        resultado = cliente.clasificar(registro.senales, seleccion, modelo, n_epocas, progreso)
+        pasos.markdown(
+            "① Pasada preliminar para ubicar el sueño  \n"
+            "② Reclasificando el tramo con 30 min de margen  \n"
+            "③ Calculando los indicadores"
+        )
+        resultado = cliente.clasificar_con_recorte_preliminar(
+            registro.senales, seleccion, modelo, n_epocas, progreso
+        )
         st.session_state["resultado"] = resultado
 
         barra.progress(1.0, text="Calculando los indicadores…")

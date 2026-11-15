@@ -86,22 +86,17 @@ def numero_epocas(longitud_muestras: int, muestras_por_epoca: int) -> int:
 def bloques_secuencia(n_epocas: int, largo: int) -> List[Tuple[int, int, int]]:
     """Divide las épocas en bloques de ``largo`` para el modelo secuencial.
 
-    Devuelve (inicio, fin, primera_nueva): el bloque cubre [inicio, fin) y solo
-    se usan sus predicciones desde ``primera_nueva``. El último bloque se
-    superpone con el anterior en lugar de descartar las épocas sobrantes, así
-    se clasifican todas las épocas del registro.
+    Devuelve bloques consecutivos no solapados, empezando en la época 0.
+    Las épocas sobrantes al final se dejan sin clasificar, como en el
+    entrenamiento y la validación de TinySleepNet.
     """
 
     if n_epocas < largo:
         return []
-    bloques = []
-    inicio = 0
-    while inicio + largo <= n_epocas:
-        bloques.append((inicio, inicio + largo, inicio))
-        inicio += largo
-    if inicio < n_epocas:
-        bloques.append((n_epocas - largo, n_epocas, inicio))
-    return bloques
+    return [
+        (inicio, inicio + largo, inicio)
+        for inicio in range(0, n_epocas - largo + 1, largo)
+    ]
 
 
 def preparar_entrada(
@@ -398,13 +393,14 @@ def comparar_con_experto(
 ) -> Optional[Concordancia]:
     """Concordancia modelo-experto en la ventana analizada.
 
-    Se excluyen las épocas que el experto no puntuó ("?") o puntuó con un
-    estadio que el modelo no predice (p. ej. "M" si el modelo tiene 5 clases).
+    Se excluyen las épocas que el experto no puntuó ("?"), puntuó con un
+    estadio que el modelo no predice (p. ej. "M") o que el modelo dejó sin
+    clasificar fuera del tramo de inferencia.
     """
 
     pred = np.asarray(prediccion, dtype=object)[ventana.inicio:ventana.fin]
     exp = np.asarray(experto, dtype=object)[ventana.inicio:ventana.fin]
-    validas = np.isin(exp, list(clases))
+    validas = np.isin(exp, list(clases)) & np.isin(pred, list(clases))
     if not validas.any():
         return None
     pred, exp_validas = pred[validas], exp[validas]
