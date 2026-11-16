@@ -17,7 +17,6 @@ import requests
 
 from procesamiento import (
     CANALES_EEG,
-    ESTADIOS_SUENO,
     bloques_secuencia,
     construir_bloque,
     todas_las_combinaciones,
@@ -261,103 +260,4 @@ class ClienteAPI:
             probabilidades=probabilidades,
             clases=clases,
             segundos=time.perf_counter() - comienzo,
-        )
-
-    def clasificar_con_recorte_preliminar(
-        self,
-        senales: Dict[str, np.ndarray],
-        canales_usados: Sequence[str],
-        modelo: InfoModelo,
-        n_epocas: int,
-        progreso: Callable[[int, int], None] | None = None,
-        margen_epocas: int = 60,
-    ) -> ResultadoInferencia:
-        """Ubica sueño en una pasada y refina la noche dentro de sus bordes.
-
-        El entrenamiento recortó cada noche a 30 minutos antes del primer
-        sueño y después del último. Sin hipnograma, se usa una predicción
-        preliminar para estimar esos bordes y se vuelve a clasificar ese tramo.
-        """
-        largo = modelo.epocas_por_llamada or 15
-        bloques_preliminares = len(bloques_secuencia(n_epocas, largo))
-        secuencias_por_lote = int(self.config["api"].get("secuencias_por_solicitud", 1))
-        pasos_preliminares = (
-            bloques_preliminares + secuencias_por_lote - 1
-        ) // secuencias_por_lote
-
-        def progreso_preliminar(hechos: int, total: int) -> None:
-            if progreso:
-                progreso(
-                    round(hechos / total * pasos_preliminares),
-                    max(2 * pasos_preliminares, 1),
-                )
-
-        preliminar = self.clasificar(
-            senales,
-            canales_usados,
-            modelo,
-            n_epocas,
-            progreso_preliminar if progreso else None,
-        )
-        indices_sueno = np.flatnonzero(np.isin(preliminar.estadios, ESTADIOS_SUENO))
-        if not len(indices_sueno):
-            raise ErrorAPI(
-                "La pasada preliminar no detectó un periodo de sueño suficiente para "
-                "recortar la noche y ejecutar la clasificación final."
-            )
-
-        inicio = max(0, int(indices_sueno[0]) - margen_epocas)
-        fin = min(n_epocas, int(indices_sueno[-1]) + margen_epocas + 1)
-        largo_bloque = int(modelo.epocas_por_llamada or 15)
-        muestras_por_epoca = int(
-            self.config["senales"]["frecuencia_hz"]
-            * self.config["senales"]["duracion_epoca_s"]
-        )
-        inicio_muestra = inicio * muestras_por_epoca
-        fin_muestra = fin * muestras_por_epoca
-        senales_recortadas = {
-            canal: señal[inicio_muestra:fin_muestra]
-            for canal, señal in senales.items()
-        }
-        epocas_recortadas = fin - inicio
-        bloques_refinados = len(bloques_secuencia(epocas_recortadas, largo_bloque))
-        pasos_refinados = (
-            bloques_refinados + secuencias_por_lote - 1
-        ) // secuencias_por_lote
-        total_pasos = pasos_preliminares + pasos_refinados
-
-        def progreso_refinado(hechos: int, total: int) -> None:
-            if progreso:
-                hechos_refinados = round(hechos / total * pasos_refinados)
-                progreso(pasos_preliminares + hechos_refinados, total_pasos)
-
-        refinado = self.clasificar(
-            senales_recortadas,
-            canales_usados,
-            modelo,
-            epocas_recortadas,
-            progreso_refinado if progreso else None,
-        )
-
-        # Solo se publican las predicciones del segundo pase, dentro del tramo
-        # recortado. Fuera de él se marca "?" para no presentar como finales las
-        # predicciones preliminares hechas sobre la noche completa.
-        fin_refinado = inicio + bloques_refinados * largo_bloque
-        estadios = np.full(n_epocas, "?", dtype=object)
-        confianzas = np.full(n_epocas, np.nan, dtype=float)
-        probabilidades = np.zeros_like(preliminar.probabilidades)
-        if fin_refinado > inicio:
-            n_refinadas = fin_refinado - inicio
-            estadios[inicio:fin_refinado] = refinado.estadios[:n_refinadas]
-            confianzas[inicio:fin_refinado] = refinado.confianzas[:n_refinadas]
-            probabilidades[inicio:fin_refinado] = refinado.probabilidades[:n_refinadas]
-
-        if progreso:
-            progreso(total_pasos, total_pasos)
-        return ResultadoInferencia(
-            estadios=estadios,
-            confianzas=confianzas,
-            probabilidades=probabilidades,
-            clases=preliminar.clases,
-            segundos=preliminar.segundos + refinado.segundos,
         )

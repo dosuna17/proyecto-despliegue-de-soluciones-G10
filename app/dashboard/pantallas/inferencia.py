@@ -71,11 +71,10 @@ def mostrar(config: Dict[str, Any], cliente: ClienteAPI) -> None:
 
     try:
         pasos.markdown(
-            "① Pasada preliminar para ubicar el sueño  \n"
-            "② Reclasificando el tramo con 30 min de margen  \n"
-            "③ Calculando los indicadores"
+            "Clasificando el registro en una pasada  \n"
+            "Después se calcularán los indicadores del periodo principal de sueño"
         )
-        resultado = cliente.clasificar_con_recorte_preliminar(
+        resultado = cliente.clasificar(
             registro.senales, seleccion, modelo, n_epocas, progreso
         )
         st.session_state["resultado"] = resultado

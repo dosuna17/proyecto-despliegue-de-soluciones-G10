@@ -176,10 +176,11 @@ def leer_edf(
             )
             frecuencia = float(canal.info["sfreq"])
             if not np.isclose(frecuencia, 1.0):
-                raise ErrorRegistro(
-                    f"El EMG submental debe venir a 1 Hz, como en el entrenamiento; "
-                    f"el archivo lo trae a {frecuencia:g} Hz."
+                avisos.append(
+                    f"Se descartó el EMG submental porque viene a {frecuencia:g} Hz; "
+                    "el modelo requiere 1 Hz. Se continuará con las demás señales."
                 )
+                continue
             datos_1hz = canal.get_data()[0] * VOLTIOS_A_MICROVOLTIOS
             repeticiones = int(frecuencia_objetivo / frecuencia)
             if not np.isclose(repeticiones * frecuencia, frecuencia_objetivo):
