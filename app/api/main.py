@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import json
 import logging
+import shutil
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Literal
@@ -45,6 +47,7 @@ MODEL_USE_MLFLOW = os.getenv("MODEL_USE_MLFLOW", "false").strip().lower() in {
     "1", "true", "yes", "on"
 }
 logger = logging.getLogger(__name__)
+_cached_model_run_id: str | None = None
 
 app = FastAPI(title="Sleep Stage Classification API", version="0.3.0")
 
@@ -169,8 +172,108 @@ def configured_model_reference(client: MlflowClient, artifact_path: str) -> dict
     )
 
 
+def _guardar_metadata_checkpoint(local_path: Path, reference: dict[str, str]) -> None:
+    """Guarda la procedencia del checkpoint local mediante reemplazo atomico."""
+
+    metadata_path = Path(f"{local_path}.metadata.json")
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "run_id": reference["run_id"],
+        "run_name": reference.get("run_name", ""),
+        "artifact_path": reference["artifact_path"],
+    }
+    temporal = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=metadata_path.parent,
+            prefix=f".{metadata_path.name}.", suffix=".tmp", delete=False,
+        ) as archivo:
+            temporal = Path(archivo.name)
+            json.dump(metadata, archivo, ensure_ascii=False, indent=2)
+            archivo.write("\n")
+        os.chmod(temporal, 0o644)
+        os.replace(temporal, metadata_path)
+    finally:
+        if temporal is not None:
+            temporal.unlink(missing_ok=True)
+
+
+def _actualizar_checkpoint_local(
+    downloaded_path: Path, local_path: Path, reference: dict[str, str]
+) -> None:
+    """Copia el artefacto de MLflow al volumen local sin dejar un archivo parcial."""
+
+    if not downloaded_path.is_file():
+        raise FileNotFoundError(f"MLflow no descargo un archivo de checkpoint: {downloaded_path}")
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    temporal = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=local_path.parent,
+            prefix=f".{local_path.name}.", suffix=".tmp", delete=False,
+        ) as archivo:
+            temporal = Path(archivo.name)
+            with downloaded_path.open("rb") as origen:
+                shutil.copyfileobj(origen, archivo)
+            archivo.flush()
+            os.fsync(archivo.fileno())
+        os.chmod(temporal, 0o644)
+        os.replace(temporal, local_path)
+    finally:
+        if temporal is not None:
+            temporal.unlink(missing_ok=True)
+    _guardar_metadata_checkpoint(local_path, reference)
+
+
+def _sincronizar_champion_local(artifact_path: str) -> tuple[Path, dict[str, str]]:
+    """Resuelve y sincroniza el champion de MLflow en MODEL_PATH."""
+
+    global _cached_model_run_id
+    local_path = configured_local_model_path()
+    if local_path is None:
+        raise FileNotFoundError(
+            "MODEL_USE_MLFLOW=true requiere MODEL_PATH para guardar el checkpoint descargado."
+        )
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    reference = configured_model_reference(MlflowClient(), artifact_path)
+    metadata_path = Path(f"{local_path}.metadata.json")
+    metadata_run_id = None
+    metadata_artifact_path = None
+    if metadata_path.is_file():
+        try:
+            with metadata_path.open(encoding="utf-8") as metadata_file:
+                metadata = json.load(metadata_file)
+                metadata_run_id = metadata.get("run_id")
+                metadata_artifact_path = metadata.get("artifact_path")
+        except (OSError, json.JSONDecodeError):
+            logger.warning(
+                "No se pudo leer la metadata de %s; se actualizara el checkpoint.",
+                metadata_path,
+            )
+
+    if (
+        not local_path.is_file()
+        or metadata_run_id != reference["run_id"]
+        or metadata_artifact_path != reference["artifact_path"]
+    ):
+        downloaded_path = Path(mlflow.artifacts.download_artifacts(
+            run_id=reference["run_id"], artifact_path=reference["artifact_path"]
+        ))
+        _actualizar_checkpoint_local(downloaded_path, local_path, reference)
+        logger.info(
+            "Checkpoint local actualizado desde MLflow: run_id=%s, path=%s",
+            reference["run_id"], local_path,
+        )
+
+    if _cached_model_run_id != reference["run_id"]:
+        load_model.cache_clear()
+        _cached_model_run_id = reference["run_id"]
+    return local_path, reference
+
+
 def model_path(artifact_path: str) -> Path:
-    """Usa el checkpoint local o resuelve y descarga el modelo desde MLflow."""
+    """Usa el checkpoint local o sincroniza MODEL_PATH con el champion de MLflow."""
 
     local_path = configured_local_model_path()
     if not MODEL_USE_MLFLOW:
@@ -182,13 +285,8 @@ def model_path(artifact_path: str) -> Path:
             raise ValueError("El modo local solo admite el artefacto de modelo predeterminado.")
         return local_path
 
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    reference = configured_model_reference(MlflowClient(), artifact_path)
-    downloaded_path = mlflow.artifacts.download_artifacts(
-        run_id=reference["run_id"],
-        artifact_path=reference["artifact_path"],
-    )
-    return Path(downloaded_path)
+    synced_path, _ = _sincronizar_champion_local(artifact_path)
+    return synced_path
 
 
 @lru_cache(maxsize=8)

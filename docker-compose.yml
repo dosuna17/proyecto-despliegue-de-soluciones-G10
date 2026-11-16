@@ -17,7 +17,8 @@ services:
       MODEL_USE_MLFLOW: ${MODEL_USE_MLFLOW:-false}
       MODEL_PATH: ${MODEL_PATH:-/models/flexible_final.pth}
     volumes:
-      - ${MODEL_DIR:-./modelos}:${MODEL_MOUNT_PATH:-/models}:ro
+      # La API puede persistir aqui el champion descargado desde MLflow.
+      - ${MODEL_DIR:-./modelos}:${MODEL_MOUNT_PATH:-/models}
     restart: unless-stopped
     healthcheck:
       test:
