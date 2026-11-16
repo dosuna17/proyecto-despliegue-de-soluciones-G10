@@ -20,7 +20,7 @@ AVISO_APOYO = (
 PASOS = [
     ("1. Cargue un registro", "Use un estudio de demostración o suba su archivo EDF."),
     ("2. Elija las señales", "Marque las señales que desea usar; se necesita al menos un EEG."),
-    ("3. Revise el resultado", "Hipnograma, indicadores, señal por época y descarga en CSV."),
+    ("3. Revise el resultado", "Hipnograma, indicadores, señal por época e informe en PDF y Excel."),
 ]
 
 NOMBRES_ESTADIO = {

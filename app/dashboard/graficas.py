@@ -240,23 +240,35 @@ def senal_con_estadios(
 
     x = [eje_x(v) for v in segundos] if base is not None else segundos / 3600.0
 
-    escalas = [float(np.percentile(np.abs(senales[c][a:b][::paso]), 99) or 1.0) for c in canales]
-    separacion = 2.4 * max(escalas) if escalas else 1.0
+    # Cada señal se dibuja con su propia escala: se centra en su mediana y se
+    # divide por su amplitud típica (percentil 99), porque las amplitudes son muy
+    # distintas (p. ej. la envolvente de EMG de 1 Hz frente al EEG) y con una
+    # escala común las señales pequeñas se verían planas. El valor real en µV se
+    # conserva en el texto emergente.
+    centros, escalas = [], []
+    for c in canales:
+        tramo_c = senales[c][a:b][::paso]
+        centro = float(np.median(tramo_c)) if len(tramo_c) else 0.0
+        amplitud = float(np.percentile(np.abs(tramo_c - centro), 99)) if len(tramo_c) else 0.0
+        centros.append(centro)
+        escalas.append(amplitud if amplitud > 0 else 1.0)
+    separacion = 2.4
     alto_franja = 0.38 * separacion
     techo = 0.5 * separacion + alto_franja * 1.25
 
     fig = go.Figure()
     for k, canal in enumerate(canales):
         tramo = senales[canal][a:b][::paso]
+        normalizada = (tramo - centros[k]) / escalas[k]
         desplazamiento = -k * separacion
         color = colores_senal.get(canal, tinta["primaria"])
         fig.add_trace(go.Scattergl(
-            x=x, y=tramo + desplazamiento, mode="lines", line=dict(width=1, color=color),
+            x=x, y=normalizada + desplazamiento, mode="lines", line=dict(width=1, color=color),
             name=canal, customdata=tramo, hovertemplate=f"{canal}: %{{customdata:.1f}} µV<extra></extra>",
             showlegend=False,
         ))
         fig.add_annotation(
-            x=0, xref="paper", y=desplazamiento + separacion * 0.42, text=f"<b style='color:{color}'>━</b> {canal}",
+            x=0, xref="paper", y=desplazamiento + separacion * 0.42, text=f"<b style='color:{color}'>━</b> {canal} (escala ±{escalas[k]:.0f} µV)",
             showarrow=False, xanchor="left", font=dict(size=12, color=tinta["secundaria"]),
             bgcolor="rgba(255,255,255,0.75)" if tema == "claro" else "rgba(14,17,23,0.75)",
         )
