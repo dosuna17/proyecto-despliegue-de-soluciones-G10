@@ -72,10 +72,22 @@ recorte:
   min_sueno_periodo_min: 30
 
 interpretacion:
-  # Por debajo de esta confianza una época se marca para revisión humana.
-  umbral_confianza: 0.83
-  # Concordancia típica entre dos expertos humanos (kappa de Cohen),
-  # Danker-Hopfe et al., J Sleep Res 2009;18:74-84.
+  # Umbral de confianza por estadio predicho: una época se marca para revisión
+  # humana cuando la confianza del modelo es menor al umbral de su estadio.
+  # Se fijaron con las probabilidades de validación de la validación cruzada
+  # (nunca con el conjunto de prueba): para cada estadio, el menor umbral con
+  # el que las épocas aceptadas alcanzan una precisión igual al desempeño por
+  # estadio de SleepFM (Thapa et al., Nature Medicine, 2026) menos 5 puntos.
+  # Un umbral de 0 significa que ese estadio ya cumple la meta sin filtrar y
+  # nunca se marca. Valores del modelo TinySleepNet flexible con EMG.
+  umbrales_confianza:
+    W: 0.00
+    N1: 0.65
+    N2: 0.00
+    N3: 0.66
+    REM: 0.75
+  # Concordancia de referencia entre expertos humanos (kappa de Cohen),
+  # metaanálisis de Lee et al., J Clin Sleep Med 2022;18(1):193-202.
   kappa_entre_expertos: 0.76
 
 carga:

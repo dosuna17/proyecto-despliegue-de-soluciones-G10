@@ -59,15 +59,17 @@ def _cliente(config, monkeypatch, con_models=False):
 def test_variables_de_entorno_tienen_prioridad(config):
     cfg = cargar_config(RUTA_CONFIG_POR_DEFECTO, entorno={
         "SLEEP_STAGING_API_URL": "http://api:8000/",
-        "TABLERO_UMBRAL_CONFIANZA": "0.7",
+        "TABLERO_UMBRALES_CONFIANZA": "N1=0.7, REM=0.8",
     })
     assert cfg["api"]["url"] == "http://api:8000"
-    assert cfg["interpretacion"]["umbral_confianza"] == 0.7
+    umbrales = cfg["interpretacion"]["umbrales_confianza"]
+    assert umbrales["N1"] == 0.7 and umbrales["REM"] == 0.8
+    assert umbrales["N3"] == 0.66  # los demás estadios se conservan del YAML
 
 
 def test_valor_de_entorno_invalido_se_explica():
-    with pytest.raises(ValueError, match="TABLERO_UMBRAL_CONFIANZA"):
-        cargar_config(RUTA_CONFIG_POR_DEFECTO, entorno={"TABLERO_UMBRAL_CONFIANZA": "alto"})
+    with pytest.raises(ValueError, match="TABLERO_UMBRALES_CONFIANZA"):
+        cargar_config(RUTA_CONFIG_POR_DEFECTO, entorno={"TABLERO_UMBRALES_CONFIANZA": "alto"})
 
 
 # ---------------------------------------------------------------- lectura de archivos

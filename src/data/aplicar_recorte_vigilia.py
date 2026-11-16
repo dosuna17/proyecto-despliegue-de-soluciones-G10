@@ -64,7 +64,7 @@ def main(
     buffer_epochs: int = 60,
 ):
     if dst_dir is None:
-        # Entrega 3 -- si no se especifica dst_dir, se deriva de src_dir
+        # si no se especifica dst_dir, se deriva de src_dir
         # (ej. ".../epochs_por_sujeto_eeg_eog" ->
         # ".../epochs_por_sujeto_eeg_eog_recortado"), para que nunca quede
         # desincronizado de la variante de canales que se esta procesando.

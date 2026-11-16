@@ -110,7 +110,7 @@ EARLY_STOPPING_PATIENCE = CONFIG["training"]["cv"]["early_stopping_patience"]
 #     horas de sueño -- una porción representativa, no la noche completa.
 MAX_EPOCHS_PER_RECORDING = CONFIG["data"]["max_epochs_per_recording"]
 
-# Entrega 3 -- etiqueta legible para el tag signals_used de MLflow segun
+# etiqueta legible para el tag signals_used de MLflow segun
 # el numero de canales real de los .npz (no asumir siempre EEG-solo).
 SIGNALS_USED_BY_N_CHANNELS = {1: "EEG Fpz-Cz", 2: "EEG+EOG", 3: "EEG+EOG+EMG"}
 
@@ -232,7 +232,7 @@ def train_one_fold(
         val_recs, seq_length=DEFAULT_SEQ_LENGTH, batch_size=DEFAULT_BATCH_SIZE, shuffle=False
     )
 
-    # Entrega 3 -- numero de canales tomado de los datos reales (1=EEG, 2=EEG+EOG, ...),
+    # numero de canales tomado de los datos reales (1=EEG, 2=EEG+EOG, ...),
     # NO asumido fijo, para que este mismo script sirva para cualquier variante multicanal.
     n_input_channels = train_recs[0].X.shape[1]
     assert all(rec.X.shape[1] == n_input_channels for rec in train_recs + val_recs), (
@@ -310,7 +310,7 @@ def run_cv():
     train_codes, test_codes = get_train_test_subject_codes()
     folds = make_subject_kfold_splits(train_codes)
 
-    # Entrega 3 -- probe liviano (1 sujeto) solo para saber cuantos canales
+    # probe liviano (1 sujeto) solo para saber cuantos canales
     # trae este .npz y taggear correctamente en MLflow.
     _probe_rec = load_npz_recordings(subject_codes=train_codes[:1])[0]
     n_input_channels = _probe_rec.X.shape[1]
@@ -461,7 +461,7 @@ def run_final():
     test_loader = build_dataloader(test_recs, seq_length=DEFAULT_SEQ_LENGTH,
                                     batch_size=DEFAULT_BATCH_SIZE, shuffle=False)
 
-    # Entrega 3 -- numero de canales tomado de los datos reales (1=EEG, 2=EEG+EOG, ...),
+    # numero de canales tomado de los datos reales (1=EEG, 2=EEG+EOG, ...),
     # NO asumido fijo, para que este mismo script sirva para cualquier variante multicanal.
     n_input_channels = fit_recs[0].X.shape[1]
     assert all(rec.X.shape[1] == n_input_channels for rec in fit_recs + val_recs + test_recs), (
@@ -485,12 +485,12 @@ def run_final():
     # script se cae con un traceback -- aunque todo el trabajo real ya
     # esté guardado localmente para ese punto. Se maneja el run de
     # forma manual para poder envolver también ESE paso final.
-    # Entrega 3 -- se calcula ANTES de start_run() para poder usarlo en el
+    # se calcula ANTES de start_run() para poder usarlo en el
     # nombre del run (ej. "tinysleepnet_final_EEG+EOG") y asi identificar
     # cada variante de canales directamente en la lista de runs de MLflow,
     # sin tener que renombrar a mano despues.
     signals_used_tag = SIGNALS_USED_BY_N_CHANNELS.get(n_input_channels, f"{n_input_channels}_canales")
-    # Entrega 3 -- slug seguro para nombres de archivo (sin espacios ni "+"),
+    # slug seguro para nombres de archivo (sin espacios ni "+"),
     # usado en checkpoint/modelo/metricas para que cada combinacion de
     # canales guarde en su propio archivo y nunca sobreescriba a otra.
     signals_used_slug = signals_used_tag.replace(" ", "_").replace("+", "-")

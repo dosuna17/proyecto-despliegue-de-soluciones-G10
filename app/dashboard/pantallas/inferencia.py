@@ -29,7 +29,7 @@ def _analizar(config: Dict[str, Any], registro, resultado) -> Dict[str, Any]:
     clases = [c for c in resultado.clases]
     indicadores = calcular_indicadores(
         resultado.estadios, resultado.confianzas, ventana,
-        config["interpretacion"]["umbral_confianza"], duracion_epoca, clases,
+        config["interpretacion"]["umbrales_confianza"], duracion_epoca, clases,
     )
     concordancia = None
     if registro.tiene_hipnograma:

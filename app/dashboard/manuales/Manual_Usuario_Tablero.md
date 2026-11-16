@@ -152,7 +152,7 @@ sobre el ícono **?** de cada uno, el tablero explica qué mide.
 | Inicio – fin del sueño | Hora de la primera y la última época de sueño sostenido | Cuándo empezó y terminó la noche |
 | Despierto tras dormirse | Minutos en vigilia entre el inicio y el fin del sueño (WASO) | Si el sueño fue continuo o fragmentado |
 | Latencia de REM | Minutos desde que la persona se duerme hasta su primera época REM | Si el primer ciclo de sueño fue típico: en adultos suele estar entre 70 y 120 min; un valor muy distinto merece revisión |
-| Épocas para revisar | Épocas con confianza menor al umbral | Cuánto trabajo de revisión manual requiere el estudio |
+| Épocas para revisar | Épocas con confianza menor al umbral del estadio que eligió el modelo (N1 65 %, N3 66 %, REM 75 %; W y N2 no se marcan) | Cuánto trabajo de revisión manual requiere el estudio |
 
 Debajo de los indicadores, **Tiempo en cada estadio** muestra en recuadros
 pequeños el porcentaje del tiempo total de sueño y los minutos de N1, N2, N3 y
@@ -223,8 +223,9 @@ Solo aparece si hay hipnograma del experto.
 
 - **Coincidencia con el experto**: porcentaje de épocas en que coinciden.
 - **Kappa de Cohen**: corrige las coincidencias que ocurrirían por azar
-  (1 = acuerdo perfecto, 0 = azar). Como referencia, dos expertos humanos suelen
-  coincidir con un kappa cercano a 0.76 (Danker-Hopfe et al., 2009).
+  (1 = acuerdo perfecto, 0 = azar). Como referencia, el acuerdo entre expertos
+  humanos ronda un kappa de 0.76 (metaanálisis de Lee et al., 2022). Es una
+  referencia, no una meta de equivalencia.
 - **Matriz de confusión**: cada fila es lo que dijo el experto y cada columna
   lo que dijo el modelo. La diagonal son los aciertos; fuera de ella se ve con
   qué estadio se confunde cada uno.
@@ -307,7 +308,7 @@ Pulse **Analizar otro registro** para volver a la etapa 1.
 | Ventana analizada | El modelo se entrenó con la noche recortada a ±30 min del sueño; analizar 20 h de vigilia diurna produciría errores y distorsionaría los indicadores | Qué parte del registro se analizó y cuánta vigilia se dejó fuera |
 | Tiempo total de sueño, inicio–fin, despierto tras dormirse, latencia de REM | Son indicadores estándar del hipnograma que se pueden calcular sin la hora de apagado de luces | Cuánto durmió, cuándo y qué tan fragmentado fue el sueño |
 | Sin eficiencia ni latencia de sueño | Ambas requieren la hora de apagado de luces, que el EDF no trae; mostrarlas daría valores engañosos | — |
-| Épocas para revisar y umbral de confianza | La revisión manual de una noche completa es larga; priorizar las épocas dudosas la acelera | Cuántas épocas conviene revisar y dónde están |
+| Épocas para revisar y umbrales de confianza por estadio | La revisión manual de una noche completa es larga; priorizar las épocas dudosas la acelera. Un umbral único marcaría demasiadas épocas de los estadios fáciles (W, N2) y muy pocas de los difíciles (N1); por recomendación de los expertos, cada estadio tiene su umbral, fijado en la validación cruzada para que lo no marcado alcance el desempeño por estadio de SleepFM menos 5 puntos | Cuántas épocas conviene revisar y dónde están |
 | Hipnograma con bloques de color y línea negra, en orden clínico y con eje en horas | El orden y la línea escalonada son la convención clínica; los colores permiten reconocer cada estadio sin leer el eje | La arquitectura del sueño en la noche y cómo se pasa de un estadio a otro |
 | Hipnograma del experto en panel aparte y franja de coincidencias | Superponer dos líneas en la misma gráfica no se distinguía; en paneles separados se comparan sin confundirse | Dónde coinciden modelo y experto, y dónde conviene revisar |
 | Hallazgos en texto, solo en el PDF y el Excel | Quien recibe el archivo no tiene la página delante; un resumen en palabras le hace comprensibles los números. En la página sería repetitivo | Lo más importante del estudio en pocas líneas |

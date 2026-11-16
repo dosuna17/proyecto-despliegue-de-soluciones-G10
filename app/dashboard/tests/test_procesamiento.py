@@ -52,15 +52,27 @@ def test_validacion_exige_eeg_y_respeta_lo_que_admite_el_modelo():
 
 
 # ---------------------------------------------------------------- entrada del modelo
-def test_bloques_cubren_todas_las_epocas_sin_descartar():
+def test_bloques_consecutivos_sin_traslape_como_en_la_evaluacion():
+    # Igual que en el entrenamiento y el test: bloques de 15 sin traslape; las
+    # épocas finales que no completan un bloque quedan sin clasificar.
     bloques = bloques_secuencia(40, 15)
-    assert bloques == [(0, 15, 0), (15, 30, 15), (25, 40, 30)]
-    cubiertas = set()
+    assert bloques == [(0, 15, 0), (15, 30, 15)]
     for inicio, fin, primera in bloques:
-        assert fin - inicio == 15
-        cubiertas.update(range(primera, fin))
-    assert cubiertas == set(range(40))
+        assert fin - inicio == 15 and primera == inicio
+    assert bloques_secuencia(45, 15)[-1] == (30, 45, 30)
     assert bloques_secuencia(10, 15) == []
+
+
+def test_umbrales_por_estadio():
+    from procesamiento import describir_umbrales, para_revisar
+
+    umbrales = {"W": 0.0, "N1": 0.65, "N2": 0.0, "N3": 0.66, "REM": 0.75}
+    estadios = ["W", "N1", "N1", "N2", "N3", "REM", "REM", "?"]
+    confianzas = [0.30, 0.60, 0.70, 0.40, 0.65, 0.74, 0.90, np.nan]
+    assert para_revisar(estadios, confianzas, umbrales).tolist() == [
+        False, True, False, False, True, True, False, False,
+    ]
+    assert describir_umbrales(umbrales) == "N1 65 %, N3 66 %, REM 75 %; W y N2 no se marcan"
 
 
 def test_bloque_respeta_contrato_de_ocho_canales():
@@ -114,7 +126,7 @@ def test_indicadores_estandar():
     confianza = np.full(len(estadios), 0.9)
     confianza[[12, 13]] = 0.5
     v = periodo_principal_sueno(estadios, 10, 20, 5, 3)
-    ind = calcular_indicadores(estadios, confianza, v, 0.83, 30, CLASES)
+    ind = calcular_indicadores(estadios, confianza, v, {c: 0.83 for c in CLASES}, 30, CLASES)
     assert ind.tiempo_total_sueno_min == 13.0
     assert ind.vigilia_tras_inicio_min == 2.0
     assert ind.latencia_rem_min == 12.0
