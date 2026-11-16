@@ -140,7 +140,9 @@ def leer_edf(
 
     - Solo carga las señales que el tablero conoce (``alias``), para ahorrar memoria.
     - Convierte voltios a microvoltios, igual que en el entrenamiento.
-    - Si la frecuencia no es ``frecuencia_objetivo``, remuestrea y lo avisa.
+    - Remuestrea EEG/EOG a ``frecuencia_objetivo`` si hace falta. Para el EMG
+      de 1 Hz conserva las muestras nativas y repite cada una, como en el
+      entrenamiento de TinySleepNetEMG.
     """
 
     import mne  # importación diferida: solo se necesita al subir archivos
@@ -165,15 +167,38 @@ def leer_edf(
     avisos: List[str] = []
     senales: Dict[str, np.ndarray] = {}
     for canonico, nombre_archivo in encontrados.items():
-        canal = raw.copy().pick([nombre_archivo]).load_data(verbose="ERROR")
-        frecuencia = float(canal.info["sfreq"])
-        if abs(frecuencia - frecuencia_objetivo) > 1e-6:
-            canal.resample(frecuencia_objetivo, verbose="ERROR")
-            avisos.append(
-                f"{canonico} venía a {frecuencia:g} Hz y se ajustó a {frecuencia_objetivo} Hz, "
-                "la frecuencia con la que se entrenó el modelo."
+        if canonico == "EMG submental":
+            # TinySleepNetEMG se entrenó con 30 muestras de EMG a 1 Hz por
+            # época, repetidas 100 veces cada una para completar 3000 puntos.
+            # Leer solo este canal conserva su frecuencia nativa del EDF.
+            canal = mne.io.read_raw_edf(
+                str(ruta_psg), include=[nombre_archivo], preload=True, verbose="ERROR"
             )
-        datos = canal.get_data()[0] * VOLTIOS_A_MICROVOLTIOS
+            frecuencia = float(canal.info["sfreq"])
+            if not np.isclose(frecuencia, 1.0):
+                avisos.append(
+                    f"Se descartó el EMG submental porque viene a {frecuencia:g} Hz; "
+                    "el modelo requiere 1 Hz. Se continuará con las demás señales."
+                )
+                continue
+            datos_1hz = canal.get_data()[0] * VOLTIOS_A_MICROVOLTIOS
+            repeticiones = int(frecuencia_objetivo / frecuencia)
+            if not np.isclose(repeticiones * frecuencia, frecuencia_objetivo):
+                raise ErrorRegistro(
+                    "La frecuencia del modelo no permite repetir las muestras de EMG "
+                    "como se hizo durante el entrenamiento."
+                )
+            datos = np.repeat(datos_1hz, repeticiones)
+        else:
+            canal = raw.copy().pick([nombre_archivo]).load_data(verbose="ERROR")
+            frecuencia = float(canal.info["sfreq"])
+            if abs(frecuencia - frecuencia_objetivo) > 1e-6:
+                canal.resample(frecuencia_objetivo, verbose="ERROR")
+                avisos.append(
+                    f"{canonico} venía a {frecuencia:g} Hz y se ajustó a {frecuencia_objetivo} Hz, "
+                    "la frecuencia con la que se entrenó el modelo."
+                )
+            datos = canal.get_data()[0] * VOLTIOS_A_MICROVOLTIOS
         if not np.isfinite(datos).all():
             datos = np.nan_to_num(datos, nan=0.0, posinf=0.0, neginf=0.0)
             avisos.append(f"{canonico} tenía valores inválidos; se reemplazaron por cero.")

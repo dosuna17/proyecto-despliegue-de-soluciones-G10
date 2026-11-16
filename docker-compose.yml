@@ -13,10 +13,9 @@ services:
       MLFLOW_TRACKING_USERNAME: ${MLFLOW_TRACKING_USERNAME:-}
       MLFLOW_TRACKING_PASSWORD: ${MLFLOW_TRACKING_PASSWORD:-}
       MLFLOW_HTTP_REQUEST_TIMEOUT: ${MLFLOW_HTTP_REQUEST_TIMEOUT:-15}
-      MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-modelo_final/flexible_final.pth}
-      XGBOOST_ARTIFACT_PATH: ${XGBOOST_ARTIFACT_PATH:-files/best-xgboost-multicanal.joblib}
-      MODEL_PATH: ${MODEL_PATH:-}
-      MODEL_RUN_ID_CHECK_INTERVAL_SECONDS: ${MODEL_RUN_ID_CHECK_INTERVAL_SECONDS:-86400}
+      MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-modelo_final/flexible_emg_mlp_final.pth}
+      MODEL_USE_MLFLOW: ${MODEL_USE_MLFLOW:-false}
+      MODEL_PATH: ${MODEL_PATH:-/models/flexible_final.pth}
     volumes:
       - ${MODEL_DIR:-./modelos}:${MODEL_MOUNT_PATH:-/models}:ro
     restart: unless-stopped
@@ -50,6 +49,5 @@ services:
       # Opcionales (si no se definen se usa configs/app.yaml):
       TABLERO_UMBRAL_CONFIANZA: ${TABLERO_UMBRAL_CONFIANZA:-}
       TABLERO_SOLICITUDES_PARALELAS: ${TABLERO_SOLICITUDES_PARALELAS:-}
+      TABLERO_SECUENCIAS_POR_SOLICITUD: ${TABLERO_SECUENCIAS_POR_SOLICITUD:-}
       TABLERO_TIMEOUT_INFERENCIA_S: ${TABLERO_TIMEOUT_INFERENCIA_S:-}
-      # true solo para la sustentación (muestra también XGBoost).
-      TABLERO_MOSTRAR_COMPARACION: ${TABLERO_MOSTRAR_COMPARACION:-false}

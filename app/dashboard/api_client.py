@@ -15,7 +15,12 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import requests
 
-from procesamiento import CANALES_EEG, bloques_secuencia, construir_bloque, todas_las_combinaciones
+from procesamiento import (
+    CANALES_EEG,
+    bloques_secuencia,
+    construir_bloque,
+    todas_las_combinaciones,
+)
 
 
 class ErrorAPI(RuntimeError):
@@ -35,7 +40,6 @@ class InfoModelo:
     canales_modelo: List[str]
     clases: List[str]
     combinaciones: List[List[str]]
-    con_presencia: bool = True
     origen: str = "config"  # "api" si se leyó de GET /models
     descripcion: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
@@ -135,30 +139,18 @@ class ClienteAPI:
             descripcion=respaldo.get("descripcion", ""),
         )
 
-    def info_modelo_comparacion(self) -> InfoModelo:
-        datos = self.config["comparacion_modelos"]
-        return InfoModelo(
-            nombre=datos["nombre"],
-            endpoint=datos["endpoint"],
-            epocas_por_llamada=datos["epocas_por_llamada"],
-            canales_modelo=list(datos["canales_modelo"]),
-            clases=list(self.config["modelo"]["clases"]),
-            combinaciones=combinaciones_desde_canales(datos["canales_modelo"]),
-            con_presencia=False,
-            origen="config",
-        )
-
     # --------------------------------------------------------------- inferencia
-    def _enviar_bloque(self, modelo: InfoModelo, bloque: np.ndarray) -> List[Dict[str, Any]]:
+    def _enviar_lote(self, modelo: InfoModelo, bloques: Sequence[np.ndarray]) -> List[Dict[str, Any]]:
         canales = list(modelo.canales_modelo)
-        if modelo.con_presencia:
-            canales += [f"presence {c}" for c in modelo.canales_modelo]
+        canales += [f"presence {c}" for c in modelo.canales_modelo]
+        epochs = np.stack(bloques) if len(bloques) > 1 else bloques[0]
         cuerpo = {
             "channel_names": canales,
             "sampling_rate_hz": self.config["senales"]["frecuencia_hz"],
             "signal_unit": "uV",
-            # Dos decimales en µV bastan y reducen a la mitad el tamaño del envío.
-            "epochs": np.round(bloque.astype(np.float64), 2).tolist(),
+            # Mantener las muestras float32 del EDF sin redondearlas: así la
+            # API recibe los mismos valores que se prepararon para el modelo.
+            "epochs": epochs.astype(np.float32).tolist(),
         }
         ultimo_error: Optional[Exception] = None
         for intento in range(self.config["api"]["reintentos"] + 1):
@@ -205,25 +197,44 @@ class ClienteAPI:
         if not bloques:
             raise ErrorAPI(f"El registro es demasiado corto: se necesitan al menos {largo} épocas de 30 s.")
 
+        secuencias_por_solicitud = (
+            int(self.config["api"].get("secuencias_por_solicitud", 1))
+            if modelo.epocas_por_llamada
+            else 1
+        )
+        if not 1 <= secuencias_por_solicitud <= 4:
+            raise ErrorAPI("api.secuencias_por_solicitud debe estar entre 1 y 4.")
+        lotes = [
+            bloques[inicio:inicio + secuencias_por_solicitud]
+            for inicio in range(0, len(bloques), secuencias_por_solicitud)
+        ]
+
         estadios = np.full(n_epocas, "?", dtype=object)
         confianzas = np.zeros(n_epocas, dtype=float)
         clases = list(modelo.clases)
         probabilidades = np.zeros((n_epocas, len(clases)), dtype=float)
 
-        def tarea(bloque: Tuple[int, int, int]) -> Tuple[Tuple[int, int, int], List[Dict[str, Any]]]:
-            inicio, fin, _ = bloque
-            datos = construir_bloque(senales, canales_usados, modelo.canales_modelo, inicio, fin, muestras, modelo.con_presencia)
-            return bloque, self._enviar_bloque(modelo, datos)
+        def tarea(lote: List[Tuple[int, int, int]]) -> Tuple[List[Tuple[int, int, int]], List[Dict[str, Any]]]:
+            datos = [
+                construir_bloque(senales, canales_usados, modelo.canales_modelo, inicio, fin, muestras)
+                for inicio, fin, _ in lote
+            ]
+            return lote, self._enviar_lote(modelo, datos)
 
         comienzo = time.perf_counter()
         hechos = 0
         with ThreadPoolExecutor(max_workers=self.config["api"]["solicitudes_paralelas"]) as ejecutor:
-            futuros = [ejecutor.submit(tarea, b) for b in bloques]
+            futuros = [ejecutor.submit(tarea, lote) for lote in lotes]
             try:
                 for futuro in as_completed(futuros):
-                    (inicio, _fin, primera_nueva), predicciones = futuro.result()
+                    lote, predicciones = futuro.result()
                     for p in predicciones:
-                        indice = inicio + int(p["epoch_index"])
+                        indice_lote = int(p["epoch_index"]) // largo
+                        indice_secuencia = int(p["epoch_index"]) % largo
+                        if indice_lote >= len(lote):
+                            raise ErrorAPI("La API devolvió más predicciones de las secuencias enviadas.")
+                        inicio, _fin, primera_nueva = lote[indice_lote]
+                        indice = inicio + indice_secuencia
                         if indice < primera_nueva:
                             continue  # época ya clasificada por el bloque anterior
                         estadios[indice] = p["predicted_stage"]
@@ -237,7 +248,7 @@ class ClienteAPI:
                                 probabilidades[indice, -1] = float(p["probabilities"][clase])
                     hechos += 1
                     if progreso:
-                        progreso(hechos, len(bloques))
+                        progreso(hechos, len(lotes))
             except Exception:
                 for f in futuros:
                     f.cancel()

@@ -18,7 +18,12 @@ from procesamiento import (
 )
 
 CLASES = ["W", "N1", "N2", "N3", "REM"]
-TRES = ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]
+CANALES_TINYSLEEPNET = [
+    "EEG Fpz-Cz",
+    "EEG Pz-Oz",
+    "EOG horizontal",
+    "EMG submental",
+]
 
 
 # ---------------------------------------------------------------- combinaciones
@@ -32,18 +37,18 @@ def test_hay_doce_combinaciones_y_todas_tienen_eeg():
 def test_numero_combinacion_sigue_la_tabla_de_la_propuesta():
     assert numero_combinacion(["EEG Fpz-Cz"]) == 1
     assert numero_combinacion(["EOG horizontal", "EEG Pz-Oz"]) == 6
-    assert numero_combinacion(TRES) == 10
-    assert numero_combinacion(TRES + ["EMG submental"]) == 12
+    assert numero_combinacion(CANALES_TINYSLEEPNET[:3]) == 10
+    assert numero_combinacion(CANALES_TINYSLEEPNET) == 12
     assert numero_combinacion(["EOG horizontal"]) is None
 
 
 def test_validacion_exige_eeg_y_respeta_lo_que_admite_el_modelo():
     modelo = [c for c in todas_las_combinaciones() if "EMG submental" not in c]
-    assert "al menos una señal EEG" in validar_combinacion(["EOG horizontal"], TRES, modelo)
+    assert "al menos una señal EEG" in validar_combinacion(["EOG horizontal"], CANALES_TINYSLEEPNET, modelo)
     assert "no contiene" in validar_combinacion(["EEG Pz-Oz"], ["EEG Fpz-Cz"], modelo)
     assert "todavía no admite" in validar_combinacion(["EEG Fpz-Cz", "EMG submental"],
                                                       ["EEG Fpz-Cz", "EMG submental"], modelo)
-    assert validar_combinacion(["EEG Pz-Oz", "EOG horizontal"], TRES, modelo) is None
+    assert validar_combinacion(["EEG Pz-Oz", "EOG horizontal"], CANALES_TINYSLEEPNET, modelo) is None
 
 
 # ---------------------------------------------------------------- entrada del modelo
@@ -58,13 +63,14 @@ def test_bloques_cubren_todas_las_epocas_sin_descartar():
     assert bloques_secuencia(10, 15) == []
 
 
-def test_bloque_respeta_contrato_de_seis_canales():
+def test_bloque_respeta_contrato_de_ocho_canales():
     muestras = 3000
     senales = {"EEG Pz-Oz": np.arange(15 * muestras, dtype=np.float32)}
-    bloque = construir_bloque(senales, ["EEG Pz-Oz"], TRES, 0, 15, muestras)
-    assert bloque.shape == (15, 6, 3000)
-    assert np.all(bloque[:, 0] == 0) and np.all(bloque[:, 2] == 0)  # ausentes en ceros
-    assert np.all(bloque[:, 3] == 0) and np.all(bloque[:, 4] == 1) and np.all(bloque[:, 5] == 0)
+    bloque = construir_bloque(senales, ["EEG Pz-Oz"], CANALES_TINYSLEEPNET, 0, 15, muestras)
+    assert bloque.shape == (15, 8, 3000)
+    assert np.all(bloque[:, 0] == 0) and np.all(bloque[:, 2] == 0) and np.all(bloque[:, 3] == 0)
+    assert np.all(bloque[:, 4] == 0) and np.all(bloque[:, 5] == 1)
+    assert np.all(bloque[:, 6] == 0) and np.all(bloque[:, 7] == 0)
     assert bloque[1, 1, 0] == muestras  # la época 2 empieza donde termina la 1
 
 
@@ -145,17 +151,17 @@ def test_preparar_entrada_reordena_canales_y_anade_mascaras_de_presencia():
         ["EOG horizontal", "EEG Fpz-Cz"],
     )
 
-    assert entrada.shape == (2, 6, 3)
-    assert presentes == (True, False, True)
+    assert entrada.shape == (2, 8, 3)
+    assert presentes == (True, False, True, False)
     np.testing.assert_array_equal(entrada[:, 0, :], epocas[:, 1, :])
     np.testing.assert_array_equal(entrada[:, 1, :], np.zeros((2, 3)))
     np.testing.assert_array_equal(entrada[:, 2, :], epocas[:, 0, :])
     np.testing.assert_array_equal(
-        entrada[:, 3:, :],
+        entrada[:, 4:, :],
         np.array(
             [
-                [[1, 1, 1], [0, 0, 0], [1, 1, 1]],
-                [[1, 1, 1], [0, 0, 0], [1, 1, 1]],
+                [[1, 1, 1], [0, 0, 0], [1, 1, 1], [0, 0, 0]],
+                [[1, 1, 1], [0, 0, 0], [1, 1, 1], [0, 0, 0]],
             ],
             dtype=np.float32,
         ),

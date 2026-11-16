@@ -30,7 +30,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--artefacto",
-        default=os.getenv("MLFLOW_ARTIFACT_PATH", "modelo_final/flexible_final.pth"),
+        default=os.getenv("MLFLOW_ARTIFACT_PATH", "modelo_final/flexible_emg_mlp_final.pth"),
     )
     args = parser.parse_args()
 
@@ -68,6 +68,7 @@ def main() -> None:
             json.dumps(
                 {
                     "run_id": reference["run_id"],
+                    "run_name": reference["run_name"],
                     "artifact_path": reference["artifact_path"],
                 },
                 indent=2,

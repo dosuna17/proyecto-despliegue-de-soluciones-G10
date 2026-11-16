@@ -56,7 +56,9 @@ def resolve_latest_model_artifact(
     """
 
     experiment_name = model_config["experiment_name"]
-    run_name = model_config["run_name"]
+    run_names = model_config.get("run_names") or (
+        [model_config["run_name"]] if model_config.get("run_name") else [None]
+    )
     artifact_name = model_config["artifact_name"]
 
     experiment = client.get_experiment_by_name(experiment_name)
@@ -66,24 +68,25 @@ def resolve_latest_model_artifact(
         )
 
     # Filtrar en MLflow evita recorrer todos los runs y artefactos del experimento.
-    escaped_run_name = run_name.replace("'", "\\'")
-    filters = [
-        "attributes.status = 'FINISHED'",
-        f"tags.mlflow.runName = '{escaped_run_name}'",
-    ]
-    for tag_name, tag_value in model_config.get("required_tags", {}).items():
-        escaped_tag_value = str(tag_value).replace("'", "\\'")
-        filters.append(f"tags.{tag_name} = '{escaped_tag_value}'")
-
-    runs = client.search_runs(
-        experiment_ids=[experiment.experiment_id],
-        filter_string=" and ".join(filters),
-        run_view_type=ViewType.ACTIVE_ONLY,
-        order_by=["attributes.start_time DESC"],
-        max_results=100,
-    )
+    runs_by_id = {}
+    for run_name in run_names:
+        filters = ["attributes.status = 'FINISHED'"]
+        if run_name is not None:
+            escaped_run_name = run_name.replace("'", "\\'")
+            filters.append(f"tags.mlflow.runName = '{escaped_run_name}'")
+        for tag_name, tag_value in model_config.get("required_tags", {}).items():
+            escaped_tag_value = str(tag_value).replace("'", "\\'")
+            filters.append(f"tags.{tag_name} = '{escaped_tag_value}'")
+        for run in client.search_runs(
+            experiment_ids=[experiment.experiment_id],
+            filter_string=" and ".join(filters),
+            run_view_type=ViewType.ACTIVE_ONLY,
+            order_by=["attributes.start_time DESC"],
+            max_results=100,
+        ):
+            runs_by_id[run.info.run_id] = run
     runs = sorted(
-        runs,
+        runs_by_id.values(),
         key=lambda run: run.info.start_time or 0,
         reverse=True,
     )
@@ -98,12 +101,13 @@ def resolve_latest_model_artifact(
         if any(not item.is_dir and item.path == artifact_name for item in artifact_paths):
             return {
                 "run_id": run_id,
+                "run_name": run.data.tags.get("mlflow.runName", ""),
                 "artifact_path": artifact_name,
             }
 
     raise FileNotFoundError(
         "No se encontró un run FINISHED con el artefacto "
-        f"'{artifact_name}' para el run '{run_name}' en '{experiment_name}'."
+        f"'{artifact_name}' para los runs {run_names} en '{experiment_name}'."
     )
 
 

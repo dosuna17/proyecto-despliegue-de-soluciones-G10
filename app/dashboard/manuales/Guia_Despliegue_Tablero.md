@@ -17,7 +17,7 @@ comprobar que quedó bien.
  │ app/dashboard/Dockerfile │ ──────► │ Dockerfile (raíz)            │
  │ - lee EDF / estudios demo│ :8000   │ - /health  /models           │
  │ - arma bloques de 15     │ (red    │ - /predict-tinysleepnet      │
- │   épocas × 6 canales     │ interna)│ - /predict-xgboost           │
+ │   épocas × 8 canales     │ interna)│                              │
  │ - recorte, indicadores,  │         └──────────────┬───────────────┘
  │   gráficas, CSV          │                        │ artefactos
  └──────────────────────────┘                        ▼
@@ -73,19 +73,23 @@ combinaciones mostrar habilitadas. Formato esperado:
   "modelo": "TinySleepNet",
   "endpoint": "/predict-tinysleepnet",
   "epocas_por_llamada": 15,
-  "canales_modelo": ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"],
+  "canales_modelo": ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal", "EMG submental"],
   "clases": ["W", "N1", "N2", "N3", "REM"],
   "combinaciones": [
-    ["EEG Fpz-Cz"], ["EEG Pz-Oz"], ["EEG Fpz-Cz", "EEG Pz-Oz"],
-    ["EEG Fpz-Cz", "EOG horizontal"], ["EEG Pz-Oz", "EOG horizontal"],
-    ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]
+    ["EEG Fpz-Cz"], ["EEG Fpz-Cz", "EOG horizontal"],
+    ["EEG Fpz-Cz", "EMG submental"], ["EEG Fpz-Cz", "EOG horizontal", "EMG submental"],
+    ["EEG Pz-Oz"], ["EEG Pz-Oz", "EOG horizontal"],
+    ["EEG Pz-Oz", "EMG submental"], ["EEG Pz-Oz", "EOG horizontal", "EMG submental"],
+    ["EEG Fpz-Cz", "EEG Pz-Oz"], ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"],
+    ["EEG Fpz-Cz", "EEG Pz-Oz", "EMG submental"],
+    ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal", "EMG submental"]
   ]
 }
 ```
 
-- `canales_modelo` es el **orden fijo** de las señales en la entrada. Cuando
-  el modelo incorpore EMG, basta con agregar `"EMG submental"` aquí y las
-  combinaciones con EMG en `combinaciones`: la casilla de EMG se habilita sola.
+- `canales_modelo` es el **orden fijo** de las señales en la entrada, incluidas
+  EEG Fpz-Cz, EEG Pz-Oz, EOG horizontal y EMG submental. La casilla de EMG se
+  habilita si el archivo contiene esa señal.
 - Si el modelo no se pudo cargar al arrancar, conviene responder 503 para que
   el tablero muestre "modelo no disponible".
 
@@ -94,11 +98,12 @@ Lo que envía el tablero en cada bloque:
 
 ```json
 {
-  "channel_names": ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal",
-                    "presence EEG Fpz-Cz", "presence EEG Pz-Oz", "presence EOG horizontal"],
+  "channel_names": ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal", "EMG submental",
+                    "presence EEG Fpz-Cz", "presence EEG Pz-Oz",
+                    "presence EOG horizontal", "presence EMG submental"],
   "sampling_rate_hz": 100,
   "signal_unit": "uV",
-  "epochs": "[15][6][3000] en µV, dos decimales; señales no elegidas en ceros y su marca en 0"
+  "epochs": "[lote][15][8][3000] en µV; cada elemento del lote es una secuencia independiente"
 }
 ```
 
@@ -106,16 +111,12 @@ Detalles que conviene saber:
 
 - **No se descartan épocas.** Si el total no es múltiplo de 15, el último bloque
   se superpone con el anterior y solo se usan sus épocas nuevas.
-- Se envían `solicitudes_paralelas` bloques a la vez (4 por defecto). FastAPI
-  atiende los endpoints `def` en un grupo de hilos, así que la API los procesa
-  en paralelo.
-- Cada bloque pesa alrededor de 1.5 MB en JSON. Una noche de Sleep Cassette
-  (unas 2 600 épocas) son unos 180 bloques.
-
-### 2.4 `POST /predict-xgboost` (solo sustentación)
-Se usa únicamente con `TABLERO_MOSTRAR_COMPARACION=true`. El tablero envía las
-tres señales en el orden de `comparacion_modelos.canales_modelo`, con ceros en
-las no elegidas, en bloques de 200 épocas y sin marcas de presencia.
+- Cada solicitud puede llevar hasta `secuencias_por_solicitud` secuencias
+  independientes (4 por defecto); cada una mantiene sus 15 épocas de contexto.
+- Se envían `solicitudes_paralelas` solicitudes a la vez (4 por defecto).
+  FastAPI atiende los endpoints `def` en un grupo de hilos.
+- Una noche de Sleep Cassette (unas 2 600 épocas) requiere cerca de 44
+  solicitudes con cuatro secuencias por solicitud.
 
 ---
 
@@ -130,8 +131,8 @@ de entorno, sin tocar el código:
 | `SLEEP_STAGING_API_URL` | `api.url` | `http://localhost:8000` | URL de la API. En Docker Compose: `http://api:8000` |
 | `TABLERO_TIMEOUT_INFERENCIA_S` | `api.timeout_inferencia_s` | 120 | Espera máxima por bloque |
 | `TABLERO_SOLICITUDES_PARALELAS` | `api.solicitudes_paralelas` | 4 | Bloques enviados a la vez |
+| `TABLERO_SECUENCIAS_POR_SOLICITUD` | `api.secuencias_por_solicitud` | 4 | Secuencias de 15 épocas agrupadas en cada solicitud (máximo 4) |
 | `TABLERO_UMBRAL_CONFIANZA` | `interpretacion.umbral_confianza` | 0.83 | Umbral de "baja confianza" |
-| `TABLERO_MOSTRAR_COMPARACION` | `comparacion_modelos.mostrar` | false | `true` solo para la sustentación |
 | `TABLERO_TAMANO_MAXIMO_MB` | `carga.tamano_maximo_mb` | 200 | Tamaño máximo de un EDF subido |
 | `TABLERO_CARPETA_DEMOS` | `estudios_demo.carpeta` | `app/dashboard/estudios_demo` | Carpeta de los estudios de demostración |
 | `TABLERO_CONFIG` | — | `configs/app.yaml` | Otro archivo de configuración |
@@ -195,7 +196,7 @@ streamlit run app.py
 python -m pytest app/dashboard/tests -q
 ```
 
-Cubren las 12 combinaciones, el contrato de 6 canales, el recorte, los
+Cubren las 12 combinaciones, el contrato de 8 canales, el recorte, los
 indicadores, el kappa, la lectura de EDF, la configuración y los errores de la
 API, y la generación del PDF y el Excel (32 pruebas).
 

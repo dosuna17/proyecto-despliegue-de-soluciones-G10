@@ -10,7 +10,9 @@ Ejecutar desde la raíz del repositorio:
 from __future__ import annotations
 
 import logging
+from html import escape
 
+import requests
 import streamlit as st
 
 import textos
@@ -27,6 +29,16 @@ st.set_page_config(page_title="Clasificación del sueño", page_icon="🌙", lay
 @st.cache_resource(show_spinner=False)
 def _cliente() -> ClienteAPI:
     return ClienteAPI(obtener_config())
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _estado_modelo(api_url: str, timeout: int) -> dict:
+    try:
+        respuesta = requests.get(f"{api_url}/health", timeout=timeout)
+        respuesta.raise_for_status()
+        return respuesta.json()
+    except requests.RequestException:
+        return {}
 
 
 def main() -> None:
@@ -61,6 +73,35 @@ def main() -> None:
         else:
             st.session_state["etapa"] = "carga"
             st.rerun()
+
+    estado = _estado_modelo(
+        config["api"]["url"], config["api"]["timeout_consulta_s"]
+    )
+    run_name = estado.get("model_run_name")
+    run_id = estado.get("model_run_id")
+    if run_name and run_id:
+        etiqueta_run = f"{run_name} · {run_id}"
+    elif run_name or run_id:
+        etiqueta_run = run_name or run_id
+    elif estado.get("model_use_mlflow"):
+        etiqueta_run = "no se encontró un run con champion=True y el artefacto configurado"
+    else:
+        etiqueta_run = "no disponible en la metadata del checkpoint"
+    st.markdown(
+        """
+        <style>
+        .modelo-footer {
+            margin-top: 2rem; padding: .7rem 0; text-align: center; font-size: .8rem;
+            border-top: 1px solid rgba(128, 128, 128, .25);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="modelo-footer">Run del modelo activo: <code>{escape(str(etiqueta_run))}</code></div>',
+        unsafe_allow_html=True,
+    )
 
 
 main()
