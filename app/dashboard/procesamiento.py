@@ -27,6 +27,35 @@ ESTADIOS_SUENO = ("N1", "N2", "N3", "REM")
 # Orden clínico del hipnograma, de arriba hacia abajo.
 ORDEN_HIPNOGRAMA = ("W", "REM", "N1", "N2", "N3")
 
+
+def para_revisar(
+    estadios: Sequence[str], confianzas: Sequence[float], umbrales: Dict[str, float]
+) -> np.ndarray:
+    """Épocas que conviene revisar: confianza menor al umbral de su estadio predicho.
+
+    Cada estadio tiene su propio umbral (``interpretacion.umbrales_confianza``).
+    Un estadio con umbral 0 nunca se marca; las épocas sin clasificar ("?")
+    tampoco, porque no tienen confianza.
+    """
+
+    estadios = np.asarray(estadios, dtype=object)
+    confianzas = np.asarray(confianzas, dtype=float)
+    limites = np.array([float(umbrales.get(e, 0.0)) for e in estadios], dtype=float)
+    with np.errstate(invalid="ignore"):
+        return confianzas < limites
+
+
+def describir_umbrales(umbrales: Dict[str, float]) -> str:
+    """Texto corto de los umbrales, p. ej. «N1 65 %, N3 66 %, REM 75 %; W y N2 no se marcan»."""
+
+    marcados = [f"{c} {u * 100:.0f} %" for c, u in umbrales.items() if u > 0]
+    sin_umbral = [c for c, u in umbrales.items() if u <= 0]
+    texto = ", ".join(marcados) if marcados else "ningún estadio se marca"
+    if sin_umbral and marcados:
+        nombres = sin_umbral[0] if len(sin_umbral) == 1 else ", ".join(sin_umbral[:-1]) + " y " + sin_umbral[-1]
+        texto += f"; {nombres} no se marca{'n' if len(sin_umbral) > 1 else ''}"
+    return texto
+
 # Claves para ubicar señales por nombre cuando llegan en un orden variable.
 _CLAVES_POSICION = {
     "EEG Fpz-Cz": "fpz-cz",
@@ -312,7 +341,7 @@ def calcular_indicadores(
     estadios: Sequence[str],
     confianzas: Sequence[float],
     ventana: Ventana,
-    umbral_confianza: float,
+    umbrales_confianza: Dict[str, float],
     duracion_epoca_s: float,
     clases: Sequence[str],
 ) -> Indicadores:
@@ -356,7 +385,7 @@ def calcular_indicadores(
         fin_sueno_epoca=None if fin_rel is None else ventana.inicio + fin_rel,
         minutos_por_estadio=minutos_estadio,
         porcentaje_sueno=porcentaje,
-        epocas_baja_confianza=int(np.sum(confianza < umbral_confianza)),
+        epocas_baja_confianza=int(np.sum(para_revisar(tramo, confianza, umbrales_confianza))),
     )
 
 

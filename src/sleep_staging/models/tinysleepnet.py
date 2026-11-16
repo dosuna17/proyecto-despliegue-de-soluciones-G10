@@ -15,7 +15,7 @@ Contrato de entrada (confirmado contra segmentation.py / loader.py del
 proyecto): cada época es originalmente (1 canal, 3000 muestras) = EEG
 Fpz-Cz a 100 Hz, 30s por época. n_classes=5 (W, N1, N2, N3, REM).
 
-Entrega 3 -- extensión multicanal: el número de canales de entrada es
+extensión multicanal: el número de canales de entrada es
 ahora configurable vía TinySleepNetConfig.input_channels (1=EEG solo,
 2=EEG+EOG, 3=EEG+EOG+EMG), apilando los canales desde la primera capa
 convolucional (opción simple, documentar en el informe si se cambia).
@@ -42,7 +42,7 @@ class TinySleepNetConfig:
     sampling_rate: int = 100          # Hz (confirmado: segmentation.py)
     input_size: int = 3000            # muestras por época (confirmado: 30s * 100Hz)
     n_classes: int = 5                # W, N1, N2, N3, REM (confirmado: segmentation.py)
-    input_channels: int = 1         # Entrega 3: 1=EEG solo, 2=EEG+EOG, 3=EEG+EOG+EMG
+    input_channels: int = 1         # 1=EEG solo, 2=EEG+EOG, 3=EEG+EOG+EMG
 
     # Bloque CNN (valores reales del repo oficial, ver docstring del módulo)
     cnn_filters: int = 128
@@ -254,7 +254,7 @@ if __name__ == "__main__":
     print("CNN+LSTM (EEG solo) | input:", x_seq.shape, "-> logits:", out_seq.shape)
     print("cnn_out_dim:", model_rnn.cnn_out_dim)
 
-    # Entrega 3 -- verificacion de forma para EEG+EOG (2 canales apilados
+    # verificacion de forma para EEG+EOG (2 canales apilados
     # desde la primera capa), sin necesitar los .npz reales todavia.
     cfg_multicanal = TinySleepNetConfig(use_rnn=True, seq_length=10, input_channels=2)
     model_multicanal = TinySleepNet(cfg_multicanal)

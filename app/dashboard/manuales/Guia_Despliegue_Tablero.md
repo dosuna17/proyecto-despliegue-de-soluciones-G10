@@ -132,7 +132,7 @@ de entorno, sin tocar el código:
 | `TABLERO_TIMEOUT_INFERENCIA_S` | `api.timeout_inferencia_s` | 120 | Espera máxima por bloque |
 | `TABLERO_SOLICITUDES_PARALELAS` | `api.solicitudes_paralelas` | 4 | Bloques enviados a la vez |
 | `TABLERO_SECUENCIAS_POR_SOLICITUD` | `api.secuencias_por_solicitud` | 4 | Secuencias de 15 épocas agrupadas en cada solicitud (máximo 4) |
-| `TABLERO_UMBRAL_CONFIANZA` | `interpretacion.umbral_confianza` | 0.83 | Umbral de "baja confianza" |
+| `TABLERO_UMBRALES_CONFIANZA` | `interpretacion.umbrales_confianza` | `W=0, N1=0.65, N2=0, N3=0.66, REM=0.75` | Umbral de "baja confianza" por estadio predicho. La variable puede cambiar solo algunos estadios, p. ej. `N1=0.7,REM=0.8` |
 | `TABLERO_TAMANO_MAXIMO_MB` | `carga.tamano_maximo_mb` | 200 | Tamaño máximo de un EDF subido |
 | `TABLERO_CARPETA_DEMOS` | `estudios_demo.carpeta` | `app/dashboard/estudios_demo` | Carpeta de los estudios de demostración |
 | `TABLERO_CONFIG` | — | `configs/app.yaml` | Otro archivo de configuración |

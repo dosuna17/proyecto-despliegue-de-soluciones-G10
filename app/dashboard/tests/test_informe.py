@@ -25,12 +25,13 @@ def _datos(con_experto=True):
         probabilidades[i] = (1 - confianza[i]) / 4
         probabilidades[i, CLASES.index(estadio)] = confianza[i]
     ventana = periodo_principal_sueno(modelo, 60, 120, 60, 10)
-    indicadores = calcular_indicadores(modelo, confianza, ventana, 0.83, 30, CLASES)
+    umbrales = {c: 0.83 for c in CLASES}
+    indicadores = calcular_indicadores(modelo, confianza, ventana, umbrales, 30, CLASES)
     from datetime import datetime
     return informe.DatosInforme(
         nombre_registro="PRUEBA", inicio=datetime(2026, 1, 1, 22, 0), canales=["EEG Fpz-Cz", "EOG horizontal"],
         modelo="TinySleepNet", estadios=modelo, confianzas=confianza, probabilidades=probabilidades, clases=CLASES,
-        ventana=ventana, indicadores=indicadores, umbral=0.83, kappa_referencia=0.76, duracion_epoca_s=30,
+        ventana=ventana, indicadores=indicadores, umbrales=umbrales, kappa_referencia=0.76, duracion_epoca_s=30,
         experto=experto if con_experto else None,
         concordancia=comparar_con_experto(modelo, experto, ventana, CLASES) if con_experto else None,
         recorte={"margen_min": 30, "max_interrupcion_min": 60, "min_bloque_sueno_min": 5},
@@ -80,7 +81,7 @@ def test_sexta_clase_movimiento_aparece_en_informe():
     datos.estadios[300:304] = "M"
     datos.clases = clases
     datos.probabilidades = np.hstack([datos.probabilidades, np.zeros((len(datos.estadios), 1))])
-    datos.indicadores = calcular_indicadores(datos.estadios, datos.confianzas, datos.ventana, 0.83, 30, clases)
+    datos.indicadores = calcular_indicadores(datos.estadios, datos.confianzas, datos.ventana, {c: 0.83 for c in clases}, 30, clases)
     datos.concordancia = comparar_con_experto(datos.estadios, datos.experto, datos.ventana, clases)
     assert datos.indicadores.minutos_por_estadio["M"] == 2.0
     assert "M" in datos.concordancia.clases

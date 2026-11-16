@@ -20,7 +20,16 @@ from typing import Any, Dict, List, Optional, Sequence
 import numpy as np
 
 import textos
-from procesamiento import ESTADIOS_SUENO, ORDEN_HIPNOGRAMA, Concordancia, Indicadores, Ventana, numero_combinacion
+from procesamiento import (
+    ESTADIOS_SUENO,
+    ORDEN_HIPNOGRAMA,
+    Concordancia,
+    Indicadores,
+    Ventana,
+    describir_umbrales,
+    numero_combinacion,
+    para_revisar,
+)
 
 CARPETA_FUENTES = Path(__file__).resolve().parent / "fuentes"
 FUENTE_EXCEL = "Century Gothic"
@@ -53,7 +62,7 @@ class DatosInforme:
     clases: List[str]
     ventana: Ventana
     indicadores: Indicadores
-    umbral: float
+    umbrales: Dict[str, float]
     kappa_referencia: float
     duracion_epoca_s: float
     experto: Optional[np.ndarray] = None
@@ -64,6 +73,15 @@ class DatosInforme:
     @property
     def n_total(self) -> int:
         return len(self.estadios)
+
+    @property
+    def revisar(self) -> np.ndarray:
+        """True en las épocas con confianza menor al umbral de su estadio."""
+        return para_revisar(self.estadios, self.confianzas, self.umbrales)
+
+    @property
+    def umbrales_texto(self) -> str:
+        return describir_umbrales(self.umbrales)
 
     def hora(self, epoca: int, segundos: bool = False) -> str:
         desfase = epoca * self.duracion_epoca_s
@@ -144,18 +162,18 @@ def hallazgos(d: DatosInforme) -> List[str]:
         parrafos.append(continuidad)
 
     tramo = slice(v.inicio, v.fin)
-    baja = d.confianzas[tramo] < d.umbral
+    baja = d.revisar[tramo]
     if baja.any():
         estadios_baja = np.asarray(d.estadios[tramo], dtype=object)[baja]
         valores, cuentas = np.unique(estadios_baja, return_counts=True)
         mas = valores[int(np.argmax(cuentas))]
         parrafos.append(
             f"{int(baja.sum())} épocas ({_pct(baja.mean())} de las analizadas) tienen una confianza menor al "
-            f"{_pct(d.umbral)} y conviene revisarlas; la mayoría fueron clasificadas como "
+            f"umbral de su estadio ({d.umbrales_texto}) y conviene revisarlas; la mayoría fueron clasificadas como "
             f"{_nombre(mas)}: {int(cuentas.max())} épocas. Están en la lista de épocas para revisar."
         )
     else:
-        parrafos.append(f"Todas las épocas analizadas tienen una confianza de al menos {_pct(d.umbral)}.")
+        parrafos.append(f"Ninguna época analizada quedó por debajo del umbral de su estadio ({d.umbrales_texto}).")
 
     c = d.concordancia
     if c is not None:
@@ -198,7 +216,7 @@ def filas_indicadores(d: DatosInforme) -> List[tuple]:
         ("Despierto tras dormirse", _min(ind.vigilia_tras_inicio_min), textos.AYUDA["vigilia_tras_inicio"]),
         ("Latencia de REM", _min(ind.latencia_rem_min) if ind.latencia_rem_min is not None else "Sin REM",
          textos.AYUDA["latencia_rem"]),
-        ("Épocas para revisar", baja, textos.AYUDA["baja_confianza"].format(umbral=d.umbral)),
+        ("Épocas para revisar", baja, textos.AYUDA["baja_confianza"].format(umbrales=d.umbrales_texto)),
     ]
 
 
@@ -210,14 +228,15 @@ def filas_ficha(d: DatosInforme) -> List[tuple]:
         ("Modelo", d.modelo),
         ("Ventana analizada", f"{d.hora(v.inicio)} – {d.hora(v.fin)} ({_min(d.indicadores.minutos_analizados)})"),
         ("Duración del registro", _min(d.n_total * d.duracion_epoca_s / 60)),
-        ("Umbral de baja confianza", _pct(d.umbral)),
+        ("Umbrales de baja confianza", d.umbrales_texto),
         ("Generado", d.generado.strftime("%Y-%m-%d %H:%M")),
     ]
 
 
 def epocas_para_revisar(d: DatosInforme, maximo: Optional[int] = None) -> List[int]:
     v = d.ventana
-    indices = [i for i in range(v.inicio, v.fin) if d.confianzas[i] < d.umbral]
+    revisar = d.revisar
+    indices = [i for i in range(v.inicio, v.fin) if revisar[i]]
     indices.sort(key=lambda i: d.confianzas[i])
     return indices[:maximo] if maximo else indices
 
@@ -313,7 +332,7 @@ def dibujar_hipnograma(d: DatosInforme, figura, rect, plt) -> None:
         eje.grid(axis="x", color=REJILLA, linewidth=0.5)
         eje.tick_params(length=0, labelsize=8)
 
-    baja = conf < d.umbral
+    baja = d.revisar[tramo]
     if baja.any():
         ejes[0].vlines(x[baja] + ancho / 2, -0.85, -0.55, color=TINTA_SECUNDARIA, linewidth=0.5)
 
@@ -514,7 +533,7 @@ def _pagina_revision(f, d: DatosInforme) -> None:
     total_revisar = epocas_para_revisar(d)
     revisar = total_revisar[:80]
     _titulo_seccion(f, y, "Épocas para revisar",
-                    f"Confianza menor al {_pct(d.umbral)}, de la menos a la más confiable."
+                    f"Confianza menor al umbral de su estadio ({d.umbrales_texto}), de la menos a la más confiable."
                     + (f" Se muestran {len(revisar)} de {len(total_revisar)}; la lista completa está en el Excel."
                        if len(total_revisar) > len(revisar) else ""))
     y -= 0.045
@@ -551,7 +570,8 @@ def _pagina_revision(f, d: DatosInforme) -> None:
         f"{d.recorte.get('max_interrupcion_min', 60)} min se consideran parte de la noche. A ese periodo se le añadieron "
         f"{d.recorte.get('margen_min', 30)} min antes y después, como en el entrenamiento del modelo. Los indicadores "
         f"se calculan dentro de esa ventana. Una época se marca para revisar cuando la confianza del modelo es menor "
-        f"al {_pct(d.umbral)}."
+        f"al umbral del estadio que eligió ({d.umbrales_texto}); los umbrales se fijaron en la validación cruzada "
+        f"para que las épocas no marcadas de cada estadio tengan una precisión cercana a la del estado del arte."
     )
     _parrafo(f, 0.06, y - 0.022, metodo, 118, 8, 0.013, TINTA_SECUNDARIA)
 
@@ -736,10 +756,11 @@ def generar_excel(d: DatosInforme) -> bytes:
         columnas += ["Estadio (experto)", "¿Coincide?"]
     encabezados(e, 1, columnas)
     e.row_dimensions[1].height = 30
+    revisar = d.revisar
     for i in range(d.n_total):
         en_ventana = d.ventana.inicio <= i < d.ventana.fin
         valores = [i + 1, d.hora(i, True), str(d.estadios[i]), float(d.confianzas[i]),
-                   "Sí" if d.confianzas[i] < d.umbral else "No", "Sí" if en_ventana else "No"]
+                   "Sí" if revisar[i] else "No", "Sí" if en_ventana else "No"]
         valores += [float(p) for p in d.probabilidades[i]]
         if d.experto is not None:
             exp = str(d.experto[i])
@@ -775,7 +796,7 @@ def generar_excel(d: DatosInforme) -> bytes:
     # ---------------- Hoja 3: Para revisar ----------------
     r = libro.create_sheet("Para revisar")
     r.sheet_view.showGridLines = False
-    r["A1"] = f"Épocas con confianza menor al {_pct(d.umbral)}, de la menos a la más confiable"
+    r["A1"] = f"Épocas con confianza menor al umbral de su estadio ({d.umbrales_texto}), de la menos a la más confiable"
     r["A1"].font = subtitulo
     r["A2"] = ("Son las épocas en las que el modelo dudó más. Revíselas en el tablero (sección «Señal y clasificación "
                "por época») o en su software de polisomnografía.")
@@ -814,7 +835,7 @@ def generar_excel(d: DatosInforme) -> bytes:
         ("Estadio (modelo)", "W = vigilia, N1 y N2 = sueño ligero, N3 = sueño profundo, REM = sueño con movimientos "
                              "oculares rápidos."),
         ("Confianza", textos.AYUDA["confianza"]),
-        ("¿Revisar?", f"«Sí» cuando la confianza es menor al {_pct(d.umbral)}."),
+        ("¿Revisar?", f"«Sí» cuando la confianza es menor al umbral del estadio del modelo ({d.umbrales_texto})."),
         ("En ventana analizada", textos.AYUDA["ventana"]),
         ("Prob. W … Prob. REM", "Probabilidad que el modelo asignó a cada estadio en esa época; suman 100 %."),
         ("Estadio (experto)", "Etiqueta del hipnograma del experto, si se cargó. «?» = época no puntuada."),

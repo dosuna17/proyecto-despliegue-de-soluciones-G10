@@ -39,9 +39,9 @@ from torch.utils.data import Dataset, DataLoader
 
 import sys
 sys.path.append(str(Path(__file__).resolve().parent))  # mismo patron que generar_npz.py
-from segmentation import CLASS_TO_INT  # noqa: E402 -- Entrega 3: conversion explicita string->int
+from segmentation import CLASS_TO_INT  # noqa: E402 -- conversion explicita string->int
 
-# Entrega 3 -- override por variable de entorno para poder apuntar a distintas
+# override por variable de entorno para poder apuntar a distintas
 # carpetas de .npz (EEG-solo vs EEG+EOG) sin editar este archivo cada vez que
 # se cambia de variante. Si SLEEP_NPZ_DIR no esta configurada, se mantiene el
 # comportamiento original (EEG-solo, ya probado).
@@ -138,7 +138,7 @@ def load_npz_recordings(
 
         X, y = data["X"], data["y"]
 
-        # Entrega 3 -- riesgo confirmado por el equipo: segmentation.py genera
+        # riesgo confirmado por el equipo: segmentation.py genera
         # las etiquetas como texto ("W", "N1", ...), pero compute_class_weights
         # (np.bincount) y SleepSequenceDataset (torch.from_numpy(...).long())
         # solo funcionan con enteros. El entrenamiento anterior funciono,
