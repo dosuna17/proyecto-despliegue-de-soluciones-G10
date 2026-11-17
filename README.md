@@ -95,12 +95,14 @@ Métricas en el conjunto de prueba (personas no vistas), 5 clases.
 
 | Modelo | Canales | Exactitud | F1 macro | Kappa | Tamaño | Tiempo por estudio |
 |---|---|---|---|---|---|---|
-| TinySleepNet | Fpz-Cz + EOG | 0.811 | 0.760 | 0.742 | <!-- PENDIENTE (Daniel) --> | <!-- PENDIENTE (Daniel) --> |
-| TinySleepNet | Fpz-Cz | 0.769 | 0.723 | 0.688 | | |
+| TinySleepNet flexible con EMG (campeón) | Fpz-Cz + EOG + EMG | 0.826 | 0.784 | 0.762 | 1,558,165 parámetros | <!-- PENDIENTE (Daniel) --> |
+| TinySleepNet flexible con EMG (campeón) | Fpz-Cz | 0.799 | 0.749 | 0.726 | | |
+| TinySleepNet (versión base) | Fpz-Cz + EOG | 0.811 | 0.760 | 0.742 | <!-- PENDIENTE (Daniel) --> | <!-- PENDIENTE (Daniel) --> |
+| TinySleepNet (versión base) | Fpz-Cz | 0.769 | 0.723 | 0.688 | | |
 | XGBoost | <!-- PENDIENTE (Santiago): canales --> | 0.728 | 0.671 | 0.633 | | |
 | XGBoost | Fpz-Cz | 0.670 | 0.610 | 0.560 | | |
 
-TinySleepNet tiene 1,516,421 parámetros. Hardware de inferencia: CPU, sin GPU. <!-- PENDIENTE (Daniel): memoria en reposo y al predecir, medida en la instancia EC2 -->
+El campeón (un solo modelo para las 12 combinaciones de señales) tiene 1,558,165 parámetros; la versión base de TinySleepNet, 1,516,421. Las métricas del campeón son de las 16 personas de prueba (44,985 épocas); las de la versión base son las que ya figuraban en esta tabla, de otra evaluación, así que no se comparan directamente. Hardware de inferencia: CPU, sin GPU. <!-- PENDIENTE (Daniel): memoria en reposo y al predecir, medida en la instancia EC2 -->
 
 ## 7. Dependencias y entorno
 
@@ -142,7 +144,7 @@ Cada etapa tiene un comando y su configuración en `configs/`. Cada corrida qued
 
 ### Registrar en MLflow y marcar el modelo campeón
 
-La API no recibe archivos: busca en MLflow el último run `tinysleepnet_flexible_cv` con la etiqueta `champion=true` y la carpeta `modelo_final/flexible_final.pth` (ver `configs/models/model_registry.yaml`). Por eso los pesos, las métricas de validación cruzada y las de test viven en **un mismo run**. Cuatro comandos, siempre con `MLFLOW_TRACKING_URI` definida en el entorno:
+La API no recibe archivos. Su fuente del checkpoint se configura con `MODEL_USE_MLFLOW`: en `true`, resuelve el run publicado en MLflow y descarga el artefacto configurado en `MLFLOW_ARTIFACT_PATH`; en `false`, usa el checkpoint descargado indicado por `MODEL_PATH` (por defecto, `/models/flexible_final.pth` en Docker) y no consulta MLflow. La resolución desde MLflow usa el experimento y las etiquetas configuradas en `configs/models/model_registry.yaml`, sin depender del nombre del run. Cuatro comandos para registrar el modelo, siempre con `MLFLOW_TRACKING_URI` definida en el entorno:
 
 ```bash
 # 1. Validación cruzada: crea el run y escribe su run_id
@@ -161,6 +163,92 @@ python scripts/07_log_mlflow_flexible.py --run flexible --cv-run-id <run_id> --c
 Los pasos 2 a 4 se pueden pedir en un solo comando. `--run` es `flexible`, `flexible_emg_mlp`, `flexible_sin_lstm` o `control_<combinación>`.
 
 **Criterio del campeón** (se fija antes de mirar el test; el test solo reporta): el modelo flexible con mayor F1 macro medio en la validación cruzada sobre las 6 combinaciones comunes (las que no usan EMG), tomando el run más reciente de `flexible` y de `flexible_emg_mlp`. Solo esos dos pueden ser campeón; los controles y la ablación sin LSTM son comparaciones. `--campeon` imprime el ranking, se detiene si el run elegido no es el primero (salvo `--forzar`, que queda anotado en el run) y guarda el criterio en la etiqueta `criterio_campeon`. Si el campeón no es `flexible`, hay que cambiar `artifact_name` en el registro (y el código de la API, porque `flexible_emg_mlp` usa `TinySleepNetEMG` y recibe el EMG repetido 100 veces); el script avisa en ese caso. Sin `--cv-run-id`, `--final` conserva el comportamiento anterior (un run aparte que la API no usa).
+
+**Estado actual.** El campeón es `flexible_emg_mlp` (run `95951e2a2cfd4368970636cc6bdea9b5`, `champion=true` desde el 15 de noviembre); el run `flexible` ya no tiene la etiqueta. `configs/models/model_registry.yaml` busca ese run por la etiqueta y la API carga `TinySleepNetEMG` (cambios de Daniel en main, 13–15 de noviembre).
+
+### Reproducir los resultados del modelo flexible (artículo)
+
+Comandos exactos de las corridas que se reportan en el artículo. Todos se ejecutan desde la raíz del repositorio, con semilla 42 (`configs/models/tinysleepnet.yaml`) y con estas dos variables de entorno:
+
+```bash
+export SLEEP_NPZ_DIR=data/interim/epochs_por_sujeto_3canales_recortado   # EEG Fpz-Cz, EEG Pz-Oz y EOG (100 Hz)
+export SLEEP_EMG_DIR=data/interim/epochs_emg_recortado                   # EMG submental (1 Hz, 30 valores por época)
+```
+
+**1. Datos** (153 grabaciones; 195,479 épocas después del recorte de vigilia):
+
+```bash
+dvc pull                                                                  # o python scripts/01_download_data.py
+python scripts/generar_3canales.py
+python src/data/aplicar_recorte_vigilia.py data/interim/epochs_por_sujeto_3canales
+python scripts/generar_emg.py                                             # comprueba que las etiquetas coincidan con las de 3 canales
+```
+
+**2. Validación cruzada** (5 pliegues por persona sobre las 62 personas de entrenamiento; ventana de 500 épocas continuas por noche). Guarda los JSON por pliegue y las probabilidades de validación (`<salida>/probs_validacion/`), que después fijan los umbrales:
+
+| Run | Comando |
+|---|---|
+| `flexible` | `python scripts/06_train_flexible.py --max-epocas 30 --salida res_flexible` |
+| `flexible_emg_mlp` (campeón) | `python scripts/06_train_flexible.py --emg mlp --max-epocas 30 --salida res_emg` |
+| `flexible_sin_lstm` (ablación) | `python scripts/06_train_flexible.py --sin-lstm --max-epocas 30 --salida res_sin_lstm` |
+| `control_<combinación>` (4 controles sin EMG) | `python scripts/06_train_flexible.py --control <combinación> --max-epocas 240 --paciencia 60 --salida res_controles`, con `<combinación>` = `eeg_fpz_cz`, `eeg_pz_oz`, `eeg_fpz_cz__eeg_pz_oz`, `eeg_fpz_cz__eog_horizontal` |
+| `control_…__emg_submental` (control de 4 señales) | `python scripts/06_train_flexible.py --emg mlp --control eeg_fpz_cz__eeg_pz_oz__eog_horizontal__emg_submental --max-epocas 240 --paciencia 60 --salida res_controles` |
+
+Los flexibles usan paciencia 5 (la del yaml) y se detienen por paciencia antes de 30 épocas; los controles tienen más presupuesto porque cada uno ve una sola combinación. Cada pliegue se puede correr por separado con `--pliegues k`.
+
+**3. Modelo final** (noche completa, sin validación; las épocas son la media de las mejores épocas de la validación cruzada): el mismo comando de cada run, sin `--max-epocas` ni `--paciencia`, con `--final --noche-completa`. Por ejemplo, el campeón:
+
+```bash
+python scripts/06_train_flexible.py --final --noche-completa --emg mlp --salida res_emg
+```
+
+**4. Prueba (una sola vez).** Primero los umbrales, solo con validación; luego el ensayo y el test:
+
+```bash
+python scripts/08_evaluar_test.py --modelos modelos_finales --solo-umbrales --probs-validacion res_flexible res_emg res_sin_lstm res_controles
+python scripts/08_evaluar_test.py --modelos modelos_finales --modo prueba --probs-validacion res_flexible res_emg res_sin_lstm res_controles --delta 0.05
+python scripts/08_evaluar_test.py --modelos modelos_finales --modo test --confirmo-test-unico --probs-validacion res_flexible res_emg res_sin_lstm res_controles --delta 0.05 --salida resultados_test --figuras resultados_test/figuras
+```
+
+El test de este proyecto ya se ejecutó (candado `TEST_YA_EJECUTADO.json` en estado completo) y no se repite: los resultados se analizan desde las predicciones guardadas (`resultados_test/probs_<modelo>__<combinación>.npz`).
+
+**5. MLflow** (experimento `sleep-staging-advanced`): para cada run, los pasos 1 a 3 de la subsección siguiente; el campeón se marca con `--campeon`. Runs del artículo:
+
+| Run | run_id |
+|---|---|
+| `flexible_emg_mlp` (campeón, `champion=true`) | `95951e2a2cfd4368970636cc6bdea9b5` |
+| `flexible` | `029cc677c3734b10959735a6e9246cb8` |
+| `flexible_sin_lstm` | `c424e04708c34f04a5bfec810b705982` |
+| `control_eeg_fpz_cz` | `2bd024695ad44d19b175490e5abbdedb` |
+| `control_eeg_pz_oz` | `30877a344b304c5a8a2b5f2e3163805f` |
+| `control_eeg_fpz_cz__eeg_pz_oz` | `076282f5e5534691b441514b50e90441` |
+| `control_eeg_fpz_cz__eog_horizontal` | `038a654fc695444ab650f4e2aac9056f` |
+| `control_eeg_fpz_cz__eeg_pz_oz__eog_horizontal__emg_submental` | `74b16a9d1a854bb5a5589353fec14f91` |
+
+Pesos del campeón: `modelo_final/flexible_emg_mlp_final.pth` (1,558,165 parámetros; md5 `a3fb82ce27e33159d30b38ed3df3850c`).
+
+### Verificar los números del artículo
+
+Cada script recalcula una parte del artículo desde los artefactos guardados (MLflow, `resultados_test/`, `probs_validacion/`) e imprime `[OK ]` o `[NO ]` por afirmación. Ninguno reentrena ni vuelve a evaluar el test.
+
+| Sección | Comando (desde la raíz) |
+|---|---|
+| G1 · Arquitectura y pesos | `python scripts/verificacion/verificar_g1_arquitectura.py` y `verificar_g1_pesos.py` |
+| G1 · Entrenamiento y comparación con los dedicados | `python scripts/verificacion/verificar_g1_entrenamiento.py` y `verificar_g1_comparacion.py --probs resultados_test` |
+| G2 · Hiperparámetros (Tabla 3) | `python scripts/verificacion/verificar_g2_hiperparametros.py` y `verificar_g2_tabla3.py` |
+| G3 · Validación cruzada (Tabla 4) | `python scripts/verificacion/verificar_g3.py` |
+| G4 y G5 · Prueba y ablación (Tablas 5, 5b, 5c y 6) | `python scripts/verificacion/verificar_g4_g5.py --probs resultados_test --mlflow` |
+| G6 · Matrices de confusión (Figura 6) | `python scripts/verificacion/figura6_matrices.py --probs resultados_test --salida reports/figures` |
+| G7 · Sobreajuste y variabilidad (Figura 7) | `python scripts/verificacion/figura7_sobreajuste.py --probs resultados_test --salida reports/figures` |
+| G8 · Umbrales (Figura 8) | `python scripts/verificacion/figura8_umbrales.py --probs resultados_test --val-probs res_emg/probs_validacion --salida reports/figures` |
+| G9 · EMG y clase M | `python scripts/verificacion/verificar_g9.py --probs resultados_test --emg-dir data/interim/epochs_emg_recortado` |
+| G1 · Párrafo de arquitectura frente al código y los pesos del campeón | `python scripts/verificacion/verificar_parrafo_arquitectura.py` |
+| G2 · Lote y longitud de secuencia de los 8 modelos | `python scripts/verificacion/verificar_lote_secuencia.py` |
+| G11 · Cómputo (Tabla 8) | `python scripts/verificacion/verificar_g11.py` |
+| Tablas del entregable: prueba por combinación, validación cruzada, comparaciones, confianza, F1 por persona y entrenamiento | `python scripts/verificacion/tabla1_test_por_combinacion.py --probs resultados_test` (igual `tabla3`, `tabla4` y `tabla5`); `tabla2_validacion_cruzada.py` y `tabla6_entrenamiento.py` leen MLflow |
+| Figuras de `reports/figures/aprendizaje_profundo/` (01 a 06) | `python scripts/verificacion/figuras_pedido7.py --probs resultados_test --val-probs res_emg/probs_validacion` |
+
+Los que leen MLflow piden la URI, el usuario y la clave si no están en el entorno.
 
 ## 11. Parámetros configurables
 
