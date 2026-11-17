@@ -9,6 +9,7 @@ import shutil
 import tempfile
 from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 from typing import Any, Dict, List, Literal
 
 import mlflow
@@ -48,6 +49,7 @@ MODEL_USE_MLFLOW = os.getenv("MODEL_USE_MLFLOW", "false").strip().lower() in {
 }
 logger = logging.getLogger(__name__)
 _cached_model_run_id: str | None = None
+_model_sync_lock = Lock()
 
 app = FastAPI(title="Sleep Stage Classification API", version="0.3.0")
 
@@ -226,6 +228,13 @@ def _actualizar_checkpoint_local(
 
 
 def _sincronizar_champion_local(artifact_path: str) -> tuple[Path, dict[str, str]]:
+    """Serializa la sincronización para evitar descargas duplicadas concurrentes."""
+
+    with _model_sync_lock:
+        return _sincronizar_champion_local_locked(artifact_path)
+
+
+def _sincronizar_champion_local_locked(artifact_path: str) -> tuple[Path, dict[str, str]]:
     """Resuelve y sincroniza el champion de MLflow en MODEL_PATH."""
 
     global _cached_model_run_id
