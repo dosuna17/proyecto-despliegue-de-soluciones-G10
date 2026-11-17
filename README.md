@@ -25,7 +25,7 @@ Proyecto de grado de la Maestría en Inteligencia Artificial (Universidad de los
 
 ## 1. Problema y solución
 
-**Problema.** La estadificación del sueño se hace a mano, época por época: una noche tiene entre 800 y 1200 épocas de 30 s. Es lenta y variable: dos expertos coinciden en cerca del 83 % de las épocas, y en el estadio N1 apenas en el 63 %.
+**Problema.** La estadificación del sueño se hace a mano, época por época: una noche tiene entre 800 y 1200 épocas de 30 s. Es lenta y variable: dos expertos coinciden en cerca del 82.6 % de las épocas, y en el estadio N1 apenas en el 63 % (Rosenberg y Van Hout, 2013).
 
 **Solución.** Un modelo de aprendizaje de máquina asigna a cada época uno de cinco estadios, y una aplicación web muestra el resultado y las épocas que conviene revisar.
 
@@ -42,7 +42,7 @@ Proyecto de grado de la Maestría en Inteligencia Artificial (Universidad de los
 
 | Recurso | Enlace |
 |---|---|
-| Aplicación (tablero) | <!-- PENDIENTE (Daniel): URL pública del tablero --> _Por publicar_ |
+| Aplicación (tablero) | http://18.223.227.20:8501 (IP elástica en AWS EC2; la instancia se enciende en los horarios de evaluación) |
 | API y documentación interactiva | <!-- PENDIENTE (Daniel): URL de la API + /docs --> _Por publicar_ |
 | Conjunto de datos | [Sleep-EDF Expanded en PhysioNet](https://physionet.org/content/sleep-edfx/1.0.0/) |
 | Manual de usuario del tablero | [app/dashboard/manuales](app/dashboard/manuales) |
@@ -255,10 +255,11 @@ Los que leen MLflow piden la URI, el usuario y la clave si no están en el entor
 | Parámetro | Dónde | Para qué |
 |---|---|---|
 | `SLEEP_STAGING_API_URL` | `.env` | Dirección de la API que usa el tablero |
-| `MODEL_PATH` | `.env` | Ruta del modelo dentro de la imagen de la API |
+| `MODEL_USE_MLFLOW` | `.env` | `true` busca y descarga el modelo desde MLflow; `false` carga el checkpoint local de `MODEL_PATH` |
+| `MODEL_PATH` | `.env` | Ruta del checkpoint local (requerido con `MODEL_USE_MLFLOW=false`) |
 | `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD` | `.env` | Servidor de MLflow y credenciales de acceso |
 | Hiperparámetros de TinySleepNet | [`configs/models/tinysleepnet.yaml`](configs/models/tinysleepnet.yaml) | Semilla, tamaño de secuencia y de lote, tasa de aprendizaje, parada temprana |
-| Umbral de baja confianza, estudios de demostración, tamaño máximo de carga | <!-- PENDIENTE (María José) --> `configs/app.yaml` | Comportamiento del tablero |
+| Tablero: URL de la API, solicitudes en paralelo, recorte de la noche, umbrales de confianza por estadio, estudios de demostración, tamaño máximo de carga | [`configs/app.yaml`](configs/app.yaml) (cada valor se puede cambiar con una variable `TABLERO_*`, ver la guía de despliegue del tablero) | Comportamiento del tablero sin tocar el código |
 
 <!-- PENDIENTE (todos): completar con cada parámetro nuevo -->
 

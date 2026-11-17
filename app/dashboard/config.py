@@ -25,13 +25,25 @@ def _a_booleano(valor: str) -> bool:
     return valor.strip().lower() in {"1", "true", "si", "sí", "yes", "on"}
 
 
+def _umbrales_desde_texto(valor: str) -> Dict[str, float]:
+    """Convierte «W=0,N1=0.65,N2=0,N3=0.66,REM=0.75» en un diccionario por estadio."""
+
+    umbrales: Dict[str, float] = {}
+    for parte in valor.split(","):
+        if "=" not in parte:
+            raise ValueError(parte)
+        clase, numero = parte.split("=", 1)
+        umbrales[clase.strip()] = float(numero)
+    return umbrales
+
+
 # variable de entorno -> (ruta dentro del YAML, conversión)
 VARIABLES_ENTORNO: Dict[str, Tuple[Tuple[str, ...], Callable[[str], Any]]] = {
     "SLEEP_STAGING_API_URL": (("api", "url"), str),
     "TABLERO_TIMEOUT_INFERENCIA_S": (("api", "timeout_inferencia_s"), float),
     "TABLERO_SOLICITUDES_PARALELAS": (("api", "solicitudes_paralelas"), int),
-    "TABLERO_UMBRAL_CONFIANZA": (("interpretacion", "umbral_confianza"), float),
-    "TABLERO_MOSTRAR_COMPARACION": (("comparacion_modelos", "mostrar"), _a_booleano),
+    "TABLERO_SECUENCIAS_POR_SOLICITUD": (("api", "secuencias_por_solicitud"), int),
+    "TABLERO_UMBRALES_CONFIANZA": (("interpretacion", "umbrales_confianza"), _umbrales_desde_texto),
     "TABLERO_TAMANO_MAXIMO_MB": (("carga", "tamano_maximo_mb"), int),
     "TABLERO_CARPETA_DEMOS": (("estudios_demo", "carpeta"), str),
 }
@@ -59,7 +71,14 @@ def cargar_config(ruta: str | Path | None = None, entorno: Dict[str, str] | None
         valor = entorno.get(variable)
         if valor not in (None, ""):
             try:
-                _asignar(config, ruta_yaml, convertir(valor))
+                convertido = convertir(valor)
+                if isinstance(convertido, dict):
+                    # Los umbrales por estadio se combinan con los del YAML:
+                    # la variable puede cambiar solo algunos estadios.
+                    actual = dict(config.get(ruta_yaml[0], {}).get(ruta_yaml[1], {}) or {})
+                    actual.update(convertido)
+                    convertido = actual
+                _asignar(config, ruta_yaml, convertido)
             except ValueError as error:
                 raise ValueError(f"La variable {variable}={valor!r} no tiene un formato válido.") from error
 
@@ -73,11 +92,20 @@ def cargar_config(ruta: str | Path | None = None, entorno: Dict[str, str] | None
 
 
 def _validar(config: Dict[str, Any]) -> None:
-    umbral = config["interpretacion"]["umbral_confianza"]
-    if not 0 < umbral < 1:
-        raise ValueError("interpretacion.umbral_confianza debe estar entre 0 y 1.")
+    umbrales = config["interpretacion"].get("umbrales_confianza")
+    if not isinstance(umbrales, dict) or not umbrales:
+        raise ValueError("interpretacion.umbrales_confianza debe tener un umbral por estadio.")
+    faltan = [c for c in config["modelo"]["clases"] if c not in umbrales]
+    if faltan:
+        raise ValueError(f"interpretacion.umbrales_confianza no tiene umbral para: {', '.join(faltan)}.")
+    for clase, umbral in umbrales.items():
+        if not 0 <= float(umbral) < 1:
+            raise ValueError(f"El umbral de {clase} en interpretacion.umbrales_confianza debe estar entre 0 y 1.")
+    config["interpretacion"]["umbrales_confianza"] = {c: float(u) for c, u in umbrales.items()}
     if config["api"]["solicitudes_paralelas"] < 1:
         raise ValueError("api.solicitudes_paralelas debe ser al menos 1.")
+    if not 1 <= config["api"].get("secuencias_por_solicitud", 1) <= 4:
+        raise ValueError("api.secuencias_por_solicitud debe estar entre 1 y 4.")
     if config["recorte"]["margen_min"] < 0:
         raise ValueError("recorte.margen_min no puede ser negativo.")
 

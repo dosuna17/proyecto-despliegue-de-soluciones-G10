@@ -11,7 +11,7 @@ import graficas
 import informe
 import textos
 from pantallas.comun import hora_epoca, minutos_a_texto, reiniciar, tema
-from procesamiento import comparar_con_experto, kappa_cohen, numero_combinacion
+from procesamiento import comparar_con_experto, describir_umbrales, numero_combinacion, para_revisar
 from registro import Registro
 
 
@@ -27,7 +27,7 @@ def _datos_informe(config, registro: Registro, resultado, analisis, seleccion, m
         clases=list(resultado.clases),
         ventana=analisis["ventana"],
         indicadores=analisis["indicadores"],
-        umbral=config["interpretacion"]["umbral_confianza"],
+        umbrales=config["interpretacion"]["umbrales_confianza"],
         kappa_referencia=config["interpretacion"]["kappa_entre_expertos"],
         duracion_epoca_s=config["senales"]["duracion_epoca_s"],
         experto=None if not registro.tiene_hipnograma else np.asarray(registro.etiquetas_experto[: len(resultado.estadios)], dtype=object),
@@ -39,7 +39,7 @@ def _datos_informe(config, registro: Registro, resultado, analisis, seleccion, m
 def _huella(datos: informe.DatosInforme) -> str:
     """Identifica el análisis para no regenerar los archivos en cada interacción."""
 
-    return f"{datos.nombre_registro}|{'+'.join(datos.canales)}|{len(datos.estadios)}|{float(datos.confianzas.sum()):.6f}|{datos.umbral}"
+    return f"{datos.nombre_registro}|{'+'.join(datos.canales)}|{len(datos.estadios)}|{float(datos.confianzas.sum()):.6f}|{sorted(datos.umbrales.items())}"
 
 
 @st.cache_data(show_spinner="Preparando el informe PDF…", max_entries=4)
@@ -82,7 +82,7 @@ def _ficha(config, registro, seleccion, modelo, ventana, indicadores, n_total) -
 
 def _indicadores(config, registro, indicadores) -> None:
     duracion_epoca = config["senales"]["duracion_epoca_s"]
-    umbral = config["interpretacion"]["umbral_confianza"]
+    umbrales = config["interpretacion"]["umbrales_confianza"]
     st.subheader("Resumen del sueño (estimado por el modelo)", anchor=False)
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Tiempo total de sueño", minutos_a_texto(indicadores.tiempo_total_sueno_min),
@@ -99,8 +99,8 @@ def _indicadores(config, registro, indicadores) -> None:
               help=textos.AYUDA["latencia_rem"])
     porcentaje = indicadores.epocas_baja_confianza / max(indicadores.epocas_analizadas, 1)
     c5.metric("Épocas para revisar", f"{indicadores.epocas_baja_confianza:,}".replace(",", "."),
-              help=textos.AYUDA["baja_confianza"].format(umbral=umbral))
-    c5.caption(f"{porcentaje:.0%} de las analizadas, con confianza menor a {umbral:.0%}")
+              help=textos.AYUDA["baja_confianza"].format(umbrales=describir_umbrales(umbrales)))
+    c5.caption(f"{porcentaje:.0%} de las analizadas, con confianza menor al umbral de su estadio")
     _estadios_compactos(indicadores)
 
 
@@ -138,10 +138,10 @@ def _estadios_compactos(indicadores) -> None:
 
 def _visor_senal(config, registro, resultado, seleccion) -> None:
     duracion_epoca = config["senales"]["duracion_epoca_s"]
-    umbral = config["interpretacion"]["umbral_confianza"]
+    umbrales = config["interpretacion"]["umbrales_confianza"]
     ventana = st.session_state["analisis"]["ventana"]
     n = len(resultado.estadios)
-    baja = np.flatnonzero(resultado.confianzas < umbral)
+    baja = np.flatnonzero(para_revisar(resultado.estadios, resultado.confianzas, umbrales))
 
     st.subheader("Señal y clasificación por época", anchor=False, help=textos.AYUDA["senal"])
     if st.session_state.get("epoca_actual") is None:
@@ -183,7 +183,7 @@ def _visor_senal(config, registro, resultado, seleccion) -> None:
 
     fig = graficas.senal_con_estadios(
         registro.senales, seleccion, resultado.estadios, resultado.confianzas, primera, ancho,
-        registro.frecuencia_hz, duracion_epoca, registro.inicio, tema(), umbral, epoca_actual=actual,
+        registro.frecuencia_hz, duracion_epoca, registro.inicio, tema(), umbrales, epoca_actual=actual,
     )
     st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False})
 
@@ -197,15 +197,18 @@ def _visor_senal(config, registro, resultado, seleccion) -> None:
         st.markdown(f"**Época {actual + 1:,} · {hora_epoca(registro.inicio, actual, duracion_epoca, True)}**".replace(",", "."))
         c1, c2, c3 = st.columns(3)
         c1.markdown(f"Clasificación del modelo  \n**{textos.NOMBRES_ESTADIO.get(estadio, estadio)}**")
-        c2.markdown(
-            f"Confianza  \n**{confianza:.0%}**" + (" · ⚠ conviene revisarla" if confianza < umbral else ""),
-            help=textos.AYUDA["confianza"],
-        )
-        if segunda is not None:
+        if estadio == "?":
+            c2.markdown("Confianza  \n**—**")
+            c3.markdown("Sin clasificar")
+        else:
             c3.markdown(
                 f"Segunda opción del modelo  \n**{textos.NOMBRES_ESTADIO.get(segunda, segunda)}** "
-                f"({probabilidades[orden[1]]:.0%})",
-                help=textos.AYUDA["segunda_opcion"],
+                f"({probabilidades[orden[1]]:.0%})" if segunda is not None else "Segunda opción  \n**—**",
+                help=textos.AYUDA["segunda_opcion"] if segunda is not None else None,
+            )
+            c2.markdown(
+                f"Confianza  \n**{confianza:.0%}**" + (" · ⚠ conviene revisarla" if confianza < umbrales.get(estadio, 0.0) else ""),
+                help=textos.AYUDA["confianza"],
             )
         if registro.tiene_hipnograma:
             experto = registro.etiquetas_experto[actual]
@@ -233,38 +236,6 @@ def _concordancia(config, concordancia) -> None:
                     use_container_width=True, config={"displayModeBar": False})
 
 
-def _comparacion_modelos(config, registro, resultado, comparacion, ventana) -> None:
-    st.subheader("Comparación entre modelos (sustentación)", anchor=False)
-    st.caption("Esta sección solo se muestra con comparacion_modelos.mostrar = true y no forma parte de la "
-               "interfaz para el usuario final.")
-    if comparacion is None:
-        st.info(st.session_state.get("error_comparacion", "El modelo de comparación no respondió."))
-        return
-    a = np.asarray(resultado.estadios, dtype=object)[ventana.inicio:ventana.fin]
-    b = np.asarray(comparacion.estadios, dtype=object)[ventana.inicio:ventana.fin]
-    clases = resultado.clases
-    indice = {c: i for i, c in enumerate(clases)}
-    matriz = np.zeros((len(clases), len(clases)), dtype=int)
-    for x, y in zip(a, b):
-        if x in indice and y in indice:
-            matriz[indice[x], indice[y]] += 1
-    filas = st.columns(3 if registro.tiene_hipnograma else 2)
-    filas[0].metric(f"Acuerdo {st.session_state['modelo'].nombre} vs. XGBoost", f"{np.mean(a == b):.0%}")
-    filas[1].metric("Kappa entre modelos", f"{kappa_cohen(matriz):.2f}")
-    if registro.tiene_hipnograma:
-        otra = comparar_con_experto(comparacion.estadios, registro.etiquetas_experto, ventana, clases)
-        if otra:
-            filas[2].metric("Kappa de XGBoost con el experto", f"{otra.kappa:.2f}")
-    tiempos = graficas.eje_tiempo(len(comparacion.estadios), registro.inicio.replace(tzinfo=None) if registro.inicio else None,
-                                  config["senales"]["duracion_epoca_s"])
-    st.plotly_chart(
-        graficas.hipnograma(comparacion.estadios[ventana.inicio:ventana.fin], comparacion.confianzas[ventana.inicio:ventana.fin],
-                            tiempos[ventana.inicio:ventana.fin], config["interpretacion"]["umbral_confianza"], tema(),
-                            duracion_epoca_s=config["senales"]["duracion_epoca_s"], titulo_modelo="Clasificación de XGBoost"),
-        use_container_width=True,
-    )
-
-
 def mostrar(config: Dict[str, Any]) -> None:
     registro: Registro = st.session_state["registro"]
     resultado = st.session_state["resultado"]
@@ -273,12 +244,17 @@ def mostrar(config: Dict[str, Any]) -> None:
     modelo = st.session_state["modelo"]
     ventana, indicadores = analisis["ventana"], analisis["indicadores"]
     duracion_epoca = config["senales"]["duracion_epoca_s"]
-    umbral = config["interpretacion"]["umbral_confianza"]
+    umbrales = config["interpretacion"]["umbrales_confianza"]
     n_total = len(resultado.estadios)
 
     cabecera, boton = st.columns([4, 1])
     cabecera.subheader("Resultado del análisis", anchor=False)
     boton.button("Analizar otro registro", on_click=reiniciar, use_container_width=True)
+    if np.any(np.asarray(resultado.estadios, dtype=object) == "?"):
+        st.caption(
+            "Las épocas «?» del final del registro quedaron sin clasificar porque no completan "
+            "una secuencia de 15 épocas, igual que en la evaluación del modelo."
+        )
 
     _ficha(config, registro, seleccion, modelo, ventana, indicadores, n_total)
     _indicadores(config, registro, indicadores)
@@ -295,7 +271,7 @@ def mostrar(config: Dict[str, Any]) -> None:
     extra = [c for c in resultado.clases if c not in ("W", "N1", "N2", "N3", "REM")]
     st.plotly_chart(
         graficas.hipnograma(
-            resultado.estadios[inicio:fin], resultado.confianzas[inicio:fin], tiempos[inicio:fin], umbral, tema(),
+            resultado.estadios[inicio:fin], resultado.confianzas[inicio:fin], tiempos[inicio:fin], umbrales, tema(),
             experto=registro.etiquetas_experto[inicio:fin] if comparar else None, clases_extra=extra,
             duracion_epoca_s=duracion_epoca,
         ),
@@ -306,9 +282,6 @@ def mostrar(config: Dict[str, Any]) -> None:
 
     if analisis["concordancia"] is not None:
         _concordancia(config, analisis["concordancia"])
-
-    if config["comparacion_modelos"]["mostrar"]:
-        _comparacion_modelos(config, registro, resultado, st.session_state.get("resultado_comparacion"), ventana)
 
     st.subheader("Descargar resultados", anchor=False, help=textos.AYUDA["descarga"])
     col_pdf, col_excel = st.columns(2)

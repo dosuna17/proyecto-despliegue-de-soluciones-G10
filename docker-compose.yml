@@ -9,14 +9,15 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
-      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:?Define MLFLOW_TRACKING_URI en .env}
-      MLFLOW_TRACKING_USERNAME: ${MLFLOW_TRACKING_USERNAME}
-      MLFLOW_TRACKING_PASSWORD: ${MLFLOW_TRACKING_PASSWORD}
-      # Evita que una caída de MLflow bloquee una inferencia durante minutos.
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-}
+      MLFLOW_TRACKING_USERNAME: ${MLFLOW_TRACKING_USERNAME:-}
+      MLFLOW_TRACKING_PASSWORD: ${MLFLOW_TRACKING_PASSWORD:-}
       MLFLOW_HTTP_REQUEST_TIMEOUT: ${MLFLOW_HTTP_REQUEST_TIMEOUT:-15}
-      MLFLOW_ARTIFACT_PATH: modelo_final/flexible_final.pth
-      XGBOOST_ARTIFACT_PATH: files/best-xgboost-multicanal.joblib
-      MODEL_PATH: ${MODEL_PATH:-}
+      MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-modelo_final/flexible_emg_mlp_final.pth}
+      MODEL_USE_MLFLOW: ${MODEL_USE_MLFLOW:-false}
+      MODEL_PATH: ${MODEL_PATH:-/models/flexible_final.pth}
+    volumes:
+      - ${MODEL_DIR:-./modelos}:${MODEL_MOUNT_PATH:-/models}:ro
     restart: unless-stopped
     healthcheck:
       test:
@@ -46,8 +47,7 @@ services:
       # Dentro de la red de Docker la API se llama "api".
       SLEEP_STAGING_API_URL: http://api:8000
       # Opcionales (si no se definen se usa configs/app.yaml):
-      TABLERO_UMBRAL_CONFIANZA: ${TABLERO_UMBRAL_CONFIANZA:-}
+      TABLERO_UMBRALES_CONFIANZA: ${TABLERO_UMBRALES_CONFIANZA:-}
       TABLERO_SOLICITUDES_PARALELAS: ${TABLERO_SOLICITUDES_PARALELAS:-}
+      TABLERO_SECUENCIAS_POR_SOLICITUD: ${TABLERO_SECUENCIAS_POR_SOLICITUD:-}
       TABLERO_TIMEOUT_INFERENCIA_S: ${TABLERO_TIMEOUT_INFERENCIA_S:-}
-      # true solo para la sustentación (muestra también XGBoost).
-      TABLERO_MOSTRAR_COMPARACION: ${TABLERO_MOSTRAR_COMPARACION:-false}

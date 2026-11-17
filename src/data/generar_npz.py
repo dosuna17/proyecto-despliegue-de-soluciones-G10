@@ -33,7 +33,7 @@ from segmentation import extract_epochs, class_distribution   # noqa: E402
 # CONFIGURACIÓN -- ajusta rutas si hace falta
 # ---------------------------------------------------------------------
 DATA_DIR = Path("data/sleep-edfx/sleep-cassette")
-# Entrega 3 -- Ruta B (TinySleepNet EEG+EOG): carpeta y canales distintos a la
+# Ruta B (TinySleepNet EEG+EOG): carpeta y canales distintos a la
 # corrida EEG-solo original, para no chocar con esos .npz ya generados (el
 # script es "reanudable" y saltaria todo si el OUT_DIR ya tiene archivos).
 OUT_DIR = Path("data/interim/epochs_por_sujeto_eeg_eog")
@@ -85,7 +85,7 @@ def main():
         out_path = OUT_DIR / f"{recording_id}_epochs.npz"
 
         if out_path.exists():
-            # Entrega 3 -- guarda contra reusar por accidente .npz generados
+            # guarda contra reusar por accidente .npz generados
             # con OTRA combinacion de canales si alguien cambia CHANNEL_PICKS
             # pero se olvida de cambiar tambien OUT_DIR: sin este chequeo, el
             # script "reanudable" saltaria estos archivos en silencio.

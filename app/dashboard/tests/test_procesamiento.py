@@ -10,6 +10,7 @@ from procesamiento import (
     construir_bloque,
     kappa_cohen,
     numero_combinacion,
+    preparar_entrada,
     periodo_principal_sueno,
     todas_las_combinaciones,
     validar_combinacion,
@@ -17,7 +18,12 @@ from procesamiento import (
 )
 
 CLASES = ["W", "N1", "N2", "N3", "REM"]
-TRES = ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]
+CANALES_TINYSLEEPNET = [
+    "EEG Fpz-Cz",
+    "EEG Pz-Oz",
+    "EOG horizontal",
+    "EMG submental",
+]
 
 
 # ---------------------------------------------------------------- combinaciones
@@ -31,39 +37,52 @@ def test_hay_doce_combinaciones_y_todas_tienen_eeg():
 def test_numero_combinacion_sigue_la_tabla_de_la_propuesta():
     assert numero_combinacion(["EEG Fpz-Cz"]) == 1
     assert numero_combinacion(["EOG horizontal", "EEG Pz-Oz"]) == 6
-    assert numero_combinacion(TRES) == 10
-    assert numero_combinacion(TRES + ["EMG submental"]) == 12
+    assert numero_combinacion(CANALES_TINYSLEEPNET[:3]) == 10
+    assert numero_combinacion(CANALES_TINYSLEEPNET) == 12
     assert numero_combinacion(["EOG horizontal"]) is None
 
 
 def test_validacion_exige_eeg_y_respeta_lo_que_admite_el_modelo():
     modelo = [c for c in todas_las_combinaciones() if "EMG submental" not in c]
-    assert "al menos una señal EEG" in validar_combinacion(["EOG horizontal"], TRES, modelo)
+    assert "al menos una señal EEG" in validar_combinacion(["EOG horizontal"], CANALES_TINYSLEEPNET, modelo)
     assert "no contiene" in validar_combinacion(["EEG Pz-Oz"], ["EEG Fpz-Cz"], modelo)
     assert "todavía no admite" in validar_combinacion(["EEG Fpz-Cz", "EMG submental"],
                                                       ["EEG Fpz-Cz", "EMG submental"], modelo)
-    assert validar_combinacion(["EEG Pz-Oz", "EOG horizontal"], TRES, modelo) is None
+    assert validar_combinacion(["EEG Pz-Oz", "EOG horizontal"], CANALES_TINYSLEEPNET, modelo) is None
 
 
 # ---------------------------------------------------------------- entrada del modelo
-def test_bloques_cubren_todas_las_epocas_sin_descartar():
+def test_bloques_consecutivos_sin_traslape_como_en_la_evaluacion():
+    # Igual que en el entrenamiento y el test: bloques de 15 sin traslape; las
+    # épocas finales que no completan un bloque quedan sin clasificar.
     bloques = bloques_secuencia(40, 15)
-    assert bloques == [(0, 15, 0), (15, 30, 15), (25, 40, 30)]
-    cubiertas = set()
+    assert bloques == [(0, 15, 0), (15, 30, 15)]
     for inicio, fin, primera in bloques:
-        assert fin - inicio == 15
-        cubiertas.update(range(primera, fin))
-    assert cubiertas == set(range(40))
+        assert fin - inicio == 15 and primera == inicio
+    assert bloques_secuencia(45, 15)[-1] == (30, 45, 30)
     assert bloques_secuencia(10, 15) == []
 
 
-def test_bloque_respeta_contrato_de_seis_canales():
+def test_umbrales_por_estadio():
+    from procesamiento import describir_umbrales, para_revisar
+
+    umbrales = {"W": 0.0, "N1": 0.65, "N2": 0.0, "N3": 0.66, "REM": 0.75}
+    estadios = ["W", "N1", "N1", "N2", "N3", "REM", "REM", "?"]
+    confianzas = [0.30, 0.60, 0.70, 0.40, 0.65, 0.74, 0.90, np.nan]
+    assert para_revisar(estadios, confianzas, umbrales).tolist() == [
+        False, True, False, False, True, True, False, False,
+    ]
+    assert describir_umbrales(umbrales) == "N1 65 %, N3 66 %, REM 75 %; W y N2 no se marcan"
+
+
+def test_bloque_respeta_contrato_de_ocho_canales():
     muestras = 3000
     senales = {"EEG Pz-Oz": np.arange(15 * muestras, dtype=np.float32)}
-    bloque = construir_bloque(senales, ["EEG Pz-Oz"], TRES, 0, 15, muestras)
-    assert bloque.shape == (15, 6, 3000)
-    assert np.all(bloque[:, 0] == 0) and np.all(bloque[:, 2] == 0)  # ausentes en ceros
-    assert np.all(bloque[:, 3] == 0) and np.all(bloque[:, 4] == 1) and np.all(bloque[:, 5] == 0)
+    bloque = construir_bloque(senales, ["EEG Pz-Oz"], CANALES_TINYSLEEPNET, 0, 15, muestras)
+    assert bloque.shape == (15, 8, 3000)
+    assert np.all(bloque[:, 0] == 0) and np.all(bloque[:, 2] == 0) and np.all(bloque[:, 3] == 0)
+    assert np.all(bloque[:, 4] == 0) and np.all(bloque[:, 5] == 1)
+    assert np.all(bloque[:, 6] == 0) and np.all(bloque[:, 7] == 0)
     assert bloque[1, 1, 0] == muestras  # la época 2 empieza donde termina la 1
 
 
@@ -107,7 +126,7 @@ def test_indicadores_estandar():
     confianza = np.full(len(estadios), 0.9)
     confianza[[12, 13]] = 0.5
     v = periodo_principal_sueno(estadios, 10, 20, 5, 3)
-    ind = calcular_indicadores(estadios, confianza, v, 0.83, 30, CLASES)
+    ind = calcular_indicadores(estadios, confianza, v, {c: 0.83 for c in CLASES}, 30, CLASES)
     assert ind.tiempo_total_sueno_min == 13.0
     assert ind.vigilia_tras_inicio_min == 2.0
     assert ind.latencia_rem_min == 12.0
@@ -128,3 +147,42 @@ def test_comparacion_excluye_epocas_no_puntuadas_y_movimiento():
     assert c.epocas_comparadas == 3 and c.epocas_excluidas == 2
     assert c.exactitud == pytest.approx(2 / 3)
     assert c.matriz.sum() == 3
+
+
+def test_preparar_entrada_reordena_canales_y_anade_mascaras_de_presencia():
+    epocas = np.array(
+        [
+            [[10, 11, 12], [20, 21, 22]],
+            [[30, 31, 32], [40, 41, 42]],
+        ],
+        dtype=np.float32,
+    )
+
+    entrada, presentes = preparar_entrada(
+        epocas,
+        ["EOG horizontal", "EEG Fpz-Cz"],
+    )
+
+    assert entrada.shape == (2, 8, 3)
+    assert presentes == (True, False, True, False)
+    np.testing.assert_array_equal(entrada[:, 0, :], epocas[:, 1, :])
+    np.testing.assert_array_equal(entrada[:, 1, :], np.zeros((2, 3)))
+    np.testing.assert_array_equal(entrada[:, 2, :], epocas[:, 0, :])
+    np.testing.assert_array_equal(
+        entrada[:, 4:, :],
+        np.array(
+            [
+                [[1, 1, 1], [0, 0, 0], [1, 1, 1], [0, 0, 0]],
+                [[1, 1, 1], [0, 0, 0], [1, 1, 1], [0, 0, 0]],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+
+def test_preparar_entrada_rechaza_muestras_no_finitas():
+    epocas = np.zeros((1, 1, 3), dtype=np.float32)
+    epocas[0, 0, 1] = np.nan
+
+    with pytest.raises(ValueError, match="valores no finitos"):
+        preparar_entrada(epocas, ["EEG Fpz-Cz"])

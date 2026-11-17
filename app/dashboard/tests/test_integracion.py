@@ -59,18 +59,17 @@ def _cliente(config, monkeypatch, con_models=False):
 def test_variables_de_entorno_tienen_prioridad(config):
     cfg = cargar_config(RUTA_CONFIG_POR_DEFECTO, entorno={
         "SLEEP_STAGING_API_URL": "http://api:8000/",
-        "TABLERO_UMBRAL_CONFIANZA": "0.7",
-        "TABLERO_MOSTRAR_COMPARACION": "true",
+        "TABLERO_UMBRALES_CONFIANZA": "N1=0.7, REM=0.8",
     })
     assert cfg["api"]["url"] == "http://api:8000"
-    assert cfg["interpretacion"]["umbral_confianza"] == 0.7
-    assert cfg["comparacion_modelos"]["mostrar"] is True
-    assert config["comparacion_modelos"]["mostrar"] is False  # por defecto, interfaz de usuario final
+    umbrales = cfg["interpretacion"]["umbrales_confianza"]
+    assert umbrales["N1"] == 0.7 and umbrales["REM"] == 0.8
+    assert umbrales["N3"] == 0.66  # los demás estadios se conservan del YAML
 
 
 def test_valor_de_entorno_invalido_se_explica():
-    with pytest.raises(ValueError, match="TABLERO_UMBRAL_CONFIANZA"):
-        cargar_config(RUTA_CONFIG_POR_DEFECTO, entorno={"TABLERO_UMBRAL_CONFIANZA": "alto"})
+    with pytest.raises(ValueError, match="TABLERO_UMBRALES_CONFIANZA"):
+        cargar_config(RUTA_CONFIG_POR_DEFECTO, entorno={"TABLERO_UMBRALES_CONFIANZA": "alto"})
 
 
 # ---------------------------------------------------------------- lectura de archivos
@@ -108,7 +107,7 @@ def test_estudio_demo_ida_y_vuelta(registro, tmp_path):
 def test_sin_endpoint_models_usa_la_configuracion(config, monkeypatch):
     modelo = _cliente(config, monkeypatch).info_modelo()
     assert modelo.origen == "config"
-    assert len(modelo.combinaciones) == 6  # sin EMG: 3 opciones de EEG x con/sin EOG
+    assert len(modelo.combinaciones) == 12  # tres opciones de EEG por cuatro combinaciones de EOG/EMG
 
 
 def test_con_endpoint_models_usa_lo_que_dice_la_api(config, monkeypatch):
@@ -117,7 +116,8 @@ def test_con_endpoint_models_usa_lo_que_dice_la_api(config, monkeypatch):
 
 
 @pytest.mark.parametrize("canales", [["EEG Fpz-Cz"], ["EEG Pz-Oz", "EOG horizontal"],
-                                     ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"]])
+                                     ["EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal"],
+                                     ["EEG Fpz-Cz", "EOG horizontal", "EMG submental"]])
 def test_clasifica_todas_las_epocas_con_cada_combinacion(config, monkeypatch, registro, canales):
     cliente = _cliente(config, monkeypatch)
     modelo = cliente.info_modelo()
@@ -129,10 +129,25 @@ def test_clasifica_todas_las_epocas_con_cada_combinacion(config, monkeypatch, re
     assert avance[-1][0] == avance[-1][1]
 
 
-def test_comparacion_con_xgboost_envia_tres_canales_sin_marcas(config, monkeypatch, registro):
+def test_agrupa_cuatro_secuencias_en_una_solicitud(config, monkeypatch):
     cliente = _cliente(config, monkeypatch)
-    resultado = cliente.clasificar(registro.senales, ["EEG Fpz-Cz"], cliente.info_modelo_comparacion(), 300)
-    assert len(resultado.estadios) == 300
+    modelo = cliente.info_modelo()
+    llamadas = []
+    post_original = cliente.sesion.post
+
+    def post_contabilizado(url, json=None, timeout=None):
+        llamadas.append(np.asarray(json["epochs"]).shape)
+        return post_original(url, json=json, timeout=timeout)
+
+    cliente.sesion.post = post_contabilizado
+    tiempo = np.arange(60 * 3000) / 100
+    senales = {"EEG Fpz-Cz": (20 * np.sin(2 * np.pi * 10 * tiempo)).astype(np.float32)}
+
+    resultado = cliente.clasificar(senales, ["EEG Fpz-Cz"], modelo, 60)
+
+    assert len(llamadas) == 1
+    assert llamadas[0] == (4, 15, 8, 3000)
+    assert not np.any(resultado.estadios == "?")
 
 
 def test_error_de_validacion_llega_en_lenguaje_llano(config, monkeypatch, registro):

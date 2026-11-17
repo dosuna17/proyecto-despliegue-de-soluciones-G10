@@ -20,7 +20,7 @@ AVISO_APOYO = (
 PASOS = [
     ("1. Cargue un registro", "Use un estudio de demostración o suba su archivo EDF."),
     ("2. Elija las señales", "Marque las señales que desea usar; se necesita al menos un EEG."),
-    ("3. Revise el resultado", "Hipnograma, indicadores, señal por época y descarga en CSV."),
+    ("3. Revise el resultado", "Hipnograma, indicadores, señal por época e informe en PDF y Excel."),
 ]
 
 NOMBRES_ESTADIO = {
@@ -71,8 +71,10 @@ AYUDA = {
         "un valor muy distinto merece la revisión del especialista."
     ),
     "baja_confianza": (
-        "Épocas en las que el modelo tuvo menos de {umbral:.0%} de confianza en su respuesta. "
-        "Son las que más conviene revisar manualmente; puede recorrerlas en la sección de señales."
+        "Épocas en las que la confianza del modelo quedó por debajo del umbral del estadio que eligió "
+        "({umbrales}). Cada umbral se fijó para que las épocas no marcadas de ese estadio tengan una "
+        "precisión cercana a la de los mejores modelos publicados; los estadios sin umbral ya la alcanzan "
+        "sin filtrar. Son las que más conviene revisar manualmente; puede recorrerlas en la sección de señales."
     ),
     "confianza": (
         "La confianza es la probabilidad que el modelo asigna al estadio elegido (de 0 a 100 %). "

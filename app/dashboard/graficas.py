@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Sequence
 import numpy as np
 import plotly.graph_objects as go
 
-from procesamiento import ORDEN_HIPNOGRAMA
+from procesamiento import ORDEN_HIPNOGRAMA, para_revisar
 from textos import NOMBRES_ESTADIO
 
 COLORES = {
@@ -102,7 +102,7 @@ def hipnograma(
     estadios: Sequence[str],
     confianzas: Sequence[float],
     tiempos: Sequence,
-    umbral: float,
+    umbrales: Dict[str, float],
     tema: str,
     experto: Optional[Sequence[str]] = None,
     clases_extra: Sequence[str] = (),
@@ -143,13 +143,13 @@ def hipnograma(
     _bloques(fig, estadios, tiempos, duracion_epoca_s, posicion, colores, 1, "Modelo", es_fecha)
     _linea(fig, estadios, tiempos, duracion_epoca_s, posicion, tinta["primaria"], 1, es_fecha)
 
-    baja = confianzas < umbral
+    baja = para_revisar(estadios, confianzas, umbrales)
     if baja.any():
         texto = [f"{NOMBRES_ESTADIO.get(e, e)} · confianza {c:.0%}" for e, c in zip(estadios, confianzas)]
         fig.add_trace(go.Scatter(
             x=np.asarray(tiempos, dtype=object)[baja], y=np.full(int(baja.sum()), -0.78), mode="markers",
             marker=dict(symbol="line-ns", size=9, line=dict(width=2, color=tinta["secundaria"])),
-            name=f"Época para revisar (confianza < {umbral:.0%})",
+            name="Época para revisar (confianza menor al umbral de su estadio)",
             text=np.asarray(texto, dtype=object)[baja], hovertemplate="%{x}<br>%{text}<extra></extra>",
         ), row=1, col=1)
 
@@ -214,7 +214,7 @@ def senal_con_estadios(
     duracion_epoca_s: float,
     inicio: Optional[datetime],
     tema: str,
-    umbral: float,
+    umbrales: Dict[str, float],
     epoca_actual: Optional[int] = None,
 ) -> go.Figure:
     """Señales apiladas sobre fondo limpio, con el estadio de cada época en una franja superior.
@@ -240,29 +240,42 @@ def senal_con_estadios(
 
     x = [eje_x(v) for v in segundos] if base is not None else segundos / 3600.0
 
-    escalas = [float(np.percentile(np.abs(senales[c][a:b][::paso]), 99) or 1.0) for c in canales]
-    separacion = 2.4 * max(escalas) if escalas else 1.0
+    # Cada señal se dibuja con su propia escala: se centra en su mediana y se
+    # divide por su amplitud típica (percentil 99), porque las amplitudes son muy
+    # distintas (p. ej. la envolvente de EMG de 1 Hz frente al EEG) y con una
+    # escala común las señales pequeñas se verían planas. El valor real en µV se
+    # conserva en el texto emergente.
+    centros, escalas = [], []
+    for c in canales:
+        tramo_c = senales[c][a:b][::paso]
+        centro = float(np.median(tramo_c)) if len(tramo_c) else 0.0
+        amplitud = float(np.percentile(np.abs(tramo_c - centro), 99)) if len(tramo_c) else 0.0
+        centros.append(centro)
+        escalas.append(amplitud if amplitud > 0 else 1.0)
+    separacion = 2.4
     alto_franja = 0.38 * separacion
     techo = 0.5 * separacion + alto_franja * 1.25
 
     fig = go.Figure()
     for k, canal in enumerate(canales):
         tramo = senales[canal][a:b][::paso]
+        normalizada = (tramo - centros[k]) / escalas[k]
         desplazamiento = -k * separacion
         color = colores_senal.get(canal, tinta["primaria"])
         fig.add_trace(go.Scattergl(
-            x=x, y=tramo + desplazamiento, mode="lines", line=dict(width=1, color=color),
+            x=x, y=normalizada + desplazamiento, mode="lines", line=dict(width=1, color=color),
             name=canal, customdata=tramo, hovertemplate=f"{canal}: %{{customdata:.1f}} µV<extra></extra>",
             showlegend=False,
         ))
         fig.add_annotation(
-            x=0, xref="paper", y=desplazamiento + separacion * 0.42, text=f"<b style='color:{color}'>━</b> {canal}",
+            x=0, xref="paper", y=desplazamiento + separacion * 0.42, text=f"<b style='color:{color}'>━</b> {canal} (escala ±{escalas[k]:.0f} µV)",
             showarrow=False, xanchor="left", font=dict(size=12, color=tinta["secundaria"]),
             bgcolor="rgba(255,255,255,0.75)" if tema == "claro" else "rgba(14,17,23,0.75)",
         )
 
     y_franja0 = 0.5 * separacion
     y_franja1 = y_franja0 + alto_franja
+    revisar = para_revisar(estadios, confianzas, umbrales)
     for i in range(primera_epoca, min(primera_epoca + n_epocas, len(estadios))):
         x0, x1 = eje_x(i * duracion_epoca_s), eje_x((i + 1) * duracion_epoca_s)
         estadio = estadios[i]
@@ -273,7 +286,7 @@ def senal_con_estadios(
                       fillcolor=COLORES[tema].get(estadio, "#999999"), line=dict(width=1, color="#ffffff" if tema == "claro" else "#0e1117"),
                       layer="above")
         fig.add_annotation(
-            x=x0 + (x1 - x0) / 2, y=(y_franja0 + y_franja1) / 2, text=estadio + (" ⚠" if confianzas[i] < umbral else ""),
+            x=x0 + (x1 - x0) / 2, y=(y_franja0 + y_franja1) / 2, text=estadio + (" ⚠" if revisar[i] else ""),
             showarrow=False, font=dict(size=12, color="#ffffff"),
         )
         if i > primera_epoca:

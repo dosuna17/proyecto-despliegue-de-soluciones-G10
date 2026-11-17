@@ -29,7 +29,7 @@ def _analizar(config: Dict[str, Any], registro, resultado) -> Dict[str, Any]:
     clases = [c for c in resultado.clases]
     indicadores = calcular_indicadores(
         resultado.estadios, resultado.confianzas, ventana,
-        config["interpretacion"]["umbral_confianza"], duracion_epoca, clases,
+        config["interpretacion"]["umbrales_confianza"], duracion_epoca, clases,
     )
     concordancia = None
     if registro.tiene_hipnograma:
@@ -64,26 +64,20 @@ def mostrar(config: Dict[str, Any], cliente: ClienteAPI) -> None:
     def progreso(hechos: int, total: int) -> None:
         transcurrido = time.perf_counter() - comienzo
         restante = transcurrido / hechos * (total - hechos) if hechos else 0
-        texto = f"Clasificando: bloque {hechos} de {total}"
+        texto = f"Clasificando: lote {hechos} de {total}"
         if hechos >= 2 and restante > 5:
             texto += f" · faltan unos {max(1, round(restante / 60))} min" if restante >= 60 else f" · faltan unos {restante:.0f} s"
         barra.progress(hechos / total, text=texto)
 
     try:
-        pasos.markdown("① Clasificando cada época con el modelo  \n② Ubicando el periodo de sueño  \n③ Calculando los indicadores")
-        resultado = cliente.clasificar(registro.senales, seleccion, modelo, n_epocas, progreso)
+        pasos.markdown(
+            "Clasificando el registro en una pasada  \n"
+            "Después se calcularán los indicadores del periodo principal de sueño"
+        )
+        resultado = cliente.clasificar(
+            registro.senales, seleccion, modelo, n_epocas, progreso
+        )
         st.session_state["resultado"] = resultado
-
-        if config["comparacion_modelos"]["mostrar"]:
-            barra.progress(0.0, text="Clasificando con el modelo de comparación…")
-            try:
-                modelo_cmp = cliente.info_modelo_comparacion()
-                st.session_state["resultado_comparacion"] = cliente.clasificar(
-                    registro.senales, seleccion, modelo_cmp, n_epocas, progreso
-                )
-            except ErrorAPI as error:  # la comparación nunca debe impedir ver el resultado principal
-                st.session_state["resultado_comparacion"] = None
-                st.session_state["error_comparacion"] = error.mensaje
 
         barra.progress(1.0, text="Calculando los indicadores…")
         st.session_state["analisis"] = _analizar(config, registro, resultado)

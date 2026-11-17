@@ -14,6 +14,8 @@ api:
   # Bloques que se envían a la vez. La API atiende varias solicitudes en
   # paralelo; 4 equilibra velocidad y consumo de memoria en una instancia pequeña.
   solicitudes_paralelas: 4
+  # Secuencias independientes por solicitud HTTP; cada secuencia conserva 15 épocas.
+  secuencias_por_solicitud: 4
   # Reintentos ante un fallo de red puntual (no ante errores de validación).
   reintentos: 2
 
@@ -33,6 +35,7 @@ modelo:
     - EEG Fpz-Cz
     - EEG Pz-Oz
     - EOG horizontal
+    - EMG submental
   clases: [W, N1, N2, N3, REM]
   # Desempeño del modelo en personas que no participaron en el entrenamiento.
   # Dejar en null hasta tener los valores definitivos del artículo; mientras
@@ -42,18 +45,6 @@ modelo:
     kappa: null
     f1_macro: null
     descripcion_evaluacion: null
-
-comparacion_modelos:
-  # Solo para la sustentación: muestra además la clasificación de XGBoost.
-  # En la interfaz para el usuario final debe quedar en false.
-  mostrar: false
-  nombre: XGBoost
-  endpoint: /predict-xgboost
-  epocas_por_llamada: 200
-  canales_modelo:
-    - EEG Fpz-Cz
-    - EEG Pz-Oz
-    - EOG horizontal
 
 senales:
   frecuencia_hz: 100
@@ -81,10 +72,22 @@ recorte:
   min_sueno_periodo_min: 30
 
 interpretacion:
-  # Por debajo de esta confianza una época se marca para revisión humana.
-  umbral_confianza: 0.83
-  # Concordancia típica entre dos expertos humanos (kappa de Cohen),
-  # Danker-Hopfe et al., J Sleep Res 2009;18:74-84.
+  # Umbral de confianza por estadio predicho: una época se marca para revisión
+  # humana cuando la confianza del modelo es menor al umbral de su estadio.
+  # Se fijaron con las probabilidades de validación de la validación cruzada
+  # (nunca con el conjunto de prueba): para cada estadio, el menor umbral con
+  # el que las épocas aceptadas alcanzan una precisión igual al desempeño por
+  # estadio de SleepFM (Thapa et al., Nature Medicine, 2026) menos 5 puntos.
+  # Un umbral de 0 significa que ese estadio ya cumple la meta sin filtrar y
+  # nunca se marca. Valores del modelo TinySleepNet flexible con EMG.
+  umbrales_confianza:
+    W: 0.00
+    N1: 0.65
+    N2: 0.00
+    N3: 0.66
+    REM: 0.75
+  # Concordancia de referencia entre expertos humanos (kappa de Cohen),
+  # metaanálisis de Lee et al., J Clin Sleep Med 2022;18(1):193-202.
   kappa_entre_expertos: 0.76
 
 carga:
