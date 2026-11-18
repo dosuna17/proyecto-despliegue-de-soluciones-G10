@@ -1,11 +1,11 @@
-"""Comprueba cada afirmación y cada cifra de G3 (validación cruzada) contra los JSON de los 8 runs en MLflow.
+"""Comprueba cada afirmación y cada cifra de la validación cruzada contra los JSON de los 8 runs en MLflow.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/verificar_g3.py
+    python scripts/verificacion/verificar_validacion_cruzada.py
     (pide el URI, el usuario y la clave de MLflow si no están en el entorno)
 
 Recalcula media y desviación de cada combinación a partir de los 5 pliegues (no del resumen) y las compara
-con las Tablas 4a y 4b del documento. Lee solo etiquetas de los .npz de entrenamiento, nunca señales.
+con las tablas de validación cruzada del artículo (F1 macro y kappa). Lee solo etiquetas de los .npz de entrenamiento, nunca señales.
 """
 import argparse
 import getpass
@@ -37,7 +37,7 @@ C = ["eeg_fpz_cz", "eeg_pz_oz", "eeg_fpz_cz__eeg_pz_oz", "eeg_fpz_cz__eog_horizo
 COMUNES = C[:6]
 CTRL = ["eeg_fpz_cz", "eeg_pz_oz", "eeg_fpz_cz__eeg_pz_oz", "eeg_fpz_cz__eog_horizontal",
         "eeg_fpz_cz__eeg_pz_oz__eog_horizontal__emg_submental"]
-# Tablas 4a y 4b tal como están en el documento: (media, desviación) por combinación; columnas Flexible, EMG-MLP, Sin LSTM, Dedicado
+# Tablas de validación cruzada (F1 macro y kappa) tal como están en el artículo: (media, desviación) por combinación; columnas Flexible, EMG-MLP, Sin LSTM, Dedicado
 T4A = {"eeg_fpz_cz": [(0.753, 0.026), (0.759, 0.022), (0.706, 0.025), (0.766, 0.027)],
        "eeg_pz_oz": [(0.667, 0.052), (0.678, 0.036), (0.612, 0.028), (0.710, 0.033)],
        "eeg_fpz_cz__eeg_pz_oz": [(0.754, 0.032), (0.764, 0.023), (0.720, 0.032), (0.768, 0.030)],
@@ -84,7 +84,7 @@ if not os.environ.get("MLFLOW_TRACKING_URI"):
         os.environ["MLFLOW_TRACKING_USERNAME"] = u
         os.environ["MLFLOW_TRACKING_PASSWORD"] = getpass.getpass("MLFLOW_TRACKING_PASSWORD: ")
 mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
-tmp = Path(tempfile.mkdtemp(prefix="g3_"))
+tmp = Path(tempfile.mkdtemp(prefix="validacion_cruzada_"))
 pl, fin = {}, {}
 for m, rid in RUNS.items():
     d = Path(mlflow.artifacts.download_artifacts(run_id=rid, artifact_path="resultados", dst_path=str(tmp / m)))
@@ -110,7 +110,7 @@ check("En cada pliegue se toma la época con mayor F1 macro de validación (en l
       f"en los 40 pliegues (8 modelos × 5), la mejor época es la de mayor F1 de validación: {ok_sel}", ok_sel)
 print("       La desviación de las tablas es la poblacional de los 5 pliegues (np.std, ddof=0), como en resumir().")
 
-print("\n== Tablas 4a (F1 macro) y 4b (kappa): recalculadas desde los 5 pliegues ==")
+print("\n== Validación cruzada, F1 macro y kappa: recalculadas desde los 5 pliegues ==")
 col = ["flexible", "flexible_emg_mlp", "flexible_sin_lstm", None]
 malas = []
 for tabla, clave, nombre in [(T4A, "macro_f1", "4a"), (T4B, "cohens_kappa", "4b")]:
@@ -128,7 +128,7 @@ for tabla, clave, nombre in [(T4A, "macro_f1", "4a"), (T4B, "cohens_kappa", "4b"
             if (round(mu, 3), round(sd, 3)) != esperado:
                 malas.append(f"Tabla {nombre}, {c}, {m}: tabla {esperado[0]:.3f} ± {esperado[1]:.3f}, recalculado {mu:.3f} ± {sd:.3f}")
     print(f"       Tabla {nombre}: {n} celdas comparadas")
-check("Cada celda de las Tablas 4a y 4b coincide con la media ± desviación recalculada de los 5 pliegues",
+check("Cada celda de las tablas de validación cruzada coincide con la media ± desviación recalculada de los 5 pliegues",
       "todas coinciden" if not malas else "; ".join(malas), not malas)
 
 print("\n== Presupuesto de entrenamiento ==")
@@ -203,4 +203,4 @@ emg = [100 * (stats("flexible_emg_mlp", c + "__emg_submental", "macro_f1")[0] - 
 check("El EMG añade poco: 0.1 a 0.5 puntos", f"aporte del EMG por combinación: {[round(float(v), 2) for v in emg]}",
       round(min(emg), 1) >= 0.1 and round(max(emg), 1) <= 0.5)
 
-print(f"\n{'Todo G3 comprobado.' if fallos == 0 else f'{fallos} afirmación(es) por revisar.'}")
+print(f"\n{'Toda la validación cruzada comprobada.' if fallos == 0 else f'{fallos} afirmación(es) por revisar.'}")

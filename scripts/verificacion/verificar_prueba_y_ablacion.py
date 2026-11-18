@@ -1,12 +1,12 @@
-"""Verifica G4 (evaluación en prueba) y G5 (ablación sin LSTM) recalculando TODO desde las predicciones por época.
+"""Verifica la evaluación en prueba y la ablación sin LSTM recalculando TODO desde las predicciones por época.
 
 No vuelve a evaluar el test ni carga modelos: lee las probabilidades del único test que se corrió
 (probs_<modelo>__<combinación>.npz) y recalcula las métricas con scikit-learn, de forma independiente
 de tabla_test.csv. Los intervalos se recalculan con el mismo bootstrap por persona del script 08.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/verificar_g4_g5.py --probs resultados_test
-    python scripts/verificacion/verificar_g4_g5.py --probs "..." --mlflow     (además revisa las columnas de VC de la Tabla 6)
+    python scripts/verificacion/verificar_prueba_y_ablacion.py --probs resultados_test
+    python scripts/verificacion/verificar_prueba_y_ablacion.py --probs "..." --mlflow     (además revisa las columnas de VC de la ablación sin LSTM)
 
 La carpeta debe tener resultados_test.json y los 29 probs_*.npz (6 flexible, 12 EMG-MLP, 6 sin LSTM, 5 dedicados).
 """
@@ -30,7 +30,7 @@ CTRL = [E, P, f"{E}__{P}", f"{E}__{EO}", f"{E}__{P}__{EO}__{M}"]
 ESTADIOS = ["W", "N1", "N2", "N3", "REM"]
 
 # ---- Valores escritos en el documento ----
-# Tabla 5: exactitud, F1 macro, IC95 bajo, IC95 alto, exactitud balanceada, kappa, F1 W, N1, N2, N3, REM
+# Prueba por combinación (EMG-MLP): exactitud, F1 macro, IC95 bajo, IC95 alto, exactitud balanceada, kappa, F1 W, N1, N2, N3, REM
 T5 = {E: (.799, .749, .717, .778, .776, .726, .910, .508, .841, .775, .710),
       P: (.776, .714, .673, .751, .724, .691, .893, .475, .800, .704, .699),
       f"{E}__{P}": (.806, .756, .723, .787, .780, .735, .923, .513, .839, .772, .736),
@@ -43,17 +43,17 @@ T5 = {E: (.799, .749, .717, .778, .776, .726, .910, .508, .841, .775, .710),
       f"{E}__{EO}__{M}": (.826, .784, .756, .809, .812, .762, .915, .537, .851, .780, .835),
       f"{P}__{EO}__{M}": (.804, .755, .715, .788, .776, .731, .898, .518, .817, .717, .823),
       f"{E}__{P}__{EO}__{M}": (.827, .784, .756, .808, .810, .764, .922, .543, .847, .770, .836)}
-# Tabla 5b: F1 macro [IC95] de flexible, sin LSTM y dedicado (el EMG-MLP ya está en la Tabla 5)
+# Otros modelos: F1 macro [IC95] de flexible, sin LSTM y dedicado (el EMG-MLP ya está arriba)
 T5B = {"flexible": {E: (.749, .718, .777), P: (.700, .657, .738), f"{E}__{P}": (.767, .738, .792),
                     f"{E}__{EO}": (.764, .734, .792), f"{P}__{EO}": (.735, .704, .762), f"{E}__{P}__{EO}": (.769, .740, .795)},
        "flexible_sin_lstm": {E: (.718, .687, .747), P: (.667, .632, .700), f"{E}__{P}": (.738, .710, .765),
                              f"{E}__{EO}": (.742, .708, .773), f"{P}__{EO}": (.710, .663, .749), f"{E}__{P}__{EO}": (.749, .720, .779)},
        "control": {E: (.764, .734, .791), P: (.720, .686, .754), f"{E}__{P}": (.768, .744, .791),
                    f"{E}__{EO}": (.764, .735, .792), f"{E}__{P}__{EO}__{M}": (.771, .745, .794)}}
-# Tabla 5c: diferencia en puntos (dedicado - EMG-MLP), IC95 pareado, personas donde gana el dedicado
+# Dedicados frente al EMG-MLP: diferencia en puntos (dedicado - EMG-MLP), IC95 pareado, personas donde gana el dedicado
 T5C = {E: (1.5, 0.5, 2.4, 13), P: (0.6, -0.7, 2.0, 8), f"{E}__{P}": (1.1, -0.2, 2.5, 8),
        f"{E}__{EO}": (-1.5, -2.6, -0.3, 4), f"{E}__{P}__{EO}__{M}": (-1.2, -2.8, 0.2, 4)}
-# Tabla 6: VC con, VC sin, delta VC, prueba con, prueba sin, delta prueba
+# Ablación sin LSTM: VC con, VC sin, delta VC, prueba con, prueba sin, delta prueba
 T6 = {E: (.753, .706, .046, .749, .718, .031), P: (.667, .612, .056, .700, .667, .033),
       f"{E}__{P}": (.754, .720, .034, .767, .738, .029), f"{E}__{EO}": (.762, .732, .030, .764, .742, .022),
       f"{P}__{EO}": (.725, .683, .043, .735, .710, .026), f"{E}__{P}__{EO}": (.767, .741, .026, .769, .749, .020)}
@@ -61,7 +61,7 @@ T6_MEDIA = (.738, .699, .039, .747, .721, .027)
 
 p = argparse.ArgumentParser()
 p.add_argument("--probs", required=True, help="carpeta con resultados_test.json y los 29 probs_*.npz")
-p.add_argument("--mlflow", action="store_true", help="revisar también las columnas de validación cruzada de la Tabla 6")
+p.add_argument("--mlflow", action="store_true", help="revisar también las columnas de validación cruzada de la ablación sin LSTM")
 p.add_argument("--n-boot", type=int, default=1000)
 args = p.parse_args()
 car = Path(args.probs)
@@ -117,8 +117,8 @@ def bootstrap(yp, n_boot=args.n_boot, semilla=42):
 MET = {k: metricas(k) for k in D}
 IC = {k: bootstrap(pred[k]) for k in D}
 
-# ---------------- G4. Protocolo ----------------
-print("== G4 · Protocolo ==")
+# ---------------- Protocolo ----------------
+print("== Protocolo ==")
 iguales = all(np.array_equal(d["y_true"], y) and np.array_equal(d["rec_idx"], rec) and np.array_equal(d["epoca_idx"], ep)
               for d in D.values())
 check("Los 8 modelos (29 archivos) se evalúan sobre exactamente las mismas épocas",
@@ -141,26 +141,26 @@ check("Solo 5 clases evaluadas (la M no está en los datos) y las probabilidades
 b = R["protocolo"]["bootstrap"]
 check("Intervalos: bootstrap por persona, 1,000 remuestreos, semilla 42", b, b["n"] == 1000 and b["semilla"] == 42)
 
-# ---------------- G4. Tabla 5 ----------------
-print("\n== G4 · Tabla 5 (EMG-MLP, 12 combinaciones, 11 valores por fila) ==")
+# ---------------- Prueba por combinación ----------------
+print("\n== Prueba por combinación (EMG-MLP, 12 combinaciones, 11 valores por fila) ==")
 for c, esp in T5.items():
     m, ic = MET[("flexible_emg_mlp", c)], IC[("flexible_emg_mlp", c)]
     obs = (m["acc"], m["f1"], ic[0], ic[1], m["bal"], m["kappa"], *m["clase"])
     malos = [n for n, o, e in zip(["exact", "F1", "IC bajo", "IC alto", "exact bal", "kappa"] + ESTADIOS, obs, esp)
              if r3(o) != e]
-    check(f"Tabla 5, {NOM[c]}", " ".join(f"{o:.3f}" for o in obs) + (f"  <- difieren: {malos}" if malos else ""), not malos)
+    check(f"Prueba, {NOM[c]}", " ".join(f"{o:.3f}" for o in obs) + (f"  <- difieren: {malos}" if malos else ""), not malos)
 
-# ---------------- G4. Tabla 5b ----------------
-print("\n== G4 · Tabla 5b (F1 macro [IC95] de los otros modelos) ==")
+# ---------------- Otros modelos ----------------
+print("\n== Otros modelos (F1 macro [IC95]) ==")
 for mod, filas in T5B.items():
     for c, esp in filas.items():
         obs = (MET[(mod, c)]["f1"], *IC[(mod, c)])
         ok = tuple(r3(o) for o in obs) == esp
-        check(f"Tabla 5b, {mod}, {NOM[c]}: {esp[0]:.3f} [{esp[1]:.3f}, {esp[2]:.3f}]",
+        check(f"Otros modelos, {mod}, {NOM[c]}: {esp[0]:.3f} [{esp[1]:.3f}, {esp[2]:.3f}]",
               f"{obs[0]:.3f} [{obs[1]:.3f}, {obs[2]:.3f}]", ok)
 
-# ---------------- G4. Lectura ----------------
-print("\n== G4 · Lectura ==")
+# ---------------- Lectura ----------------
+print("\n== Lectura ==")
 emg = {c: MET[("flexible_emg_mlp", c)] for c in NOM}
 mejor = max(emg, key=lambda c: emg[c]["f1"])
 m = emg[mejor]
@@ -171,7 +171,7 @@ c4 = emg[f"{E}__{P}__{EO}__{M}"]["f1"]
 check("Con las cuatro señales queda igual (0.784)", f"{c4:.4f} (diferencia con la mejor {m['f1'] - c4:.4f})", r3(c4) == .784)
 med = {mod: np.mean([MET[(mod, c)]["f1"] for c in SIN_EMG]) for mod in ["flexible_emg_mlp", "flexible", "flexible_sin_lstm"]}
 check("F1 macro medio en las 6 combinaciones comunes en prueba: EMG-MLP 0.755, flexible 0.747 "
-      "(VC 0.745 y 0.738, verificado en G3); se mantiene el orden del criterio de selección",
+      "(VC 0.745 y 0.738, verificado en verificar_validacion_cruzada.py); se mantiene el orden del criterio de selección",
       f"EMG-MLP {med['flexible_emg_mlp']:.4f}, flexible {med['flexible']:.4f}, sin LSTM {med['flexible_sin_lstm']:.4f}",
       r3(med["flexible_emg_mlp"]) == .755 and r3(med["flexible"]) == .747 and med["flexible_emg_mlp"] > med["flexible"])
 dif = {c: 100 * (MET[("control", c)]["f1"] - emg[c]["f1"]) for c in CTRL}
@@ -197,8 +197,8 @@ check("N1 es el estadio más difícil (0.458–0.545 con LSTM; 0.362–0.450 sin
       dificil and facil and (r3(min(n1c)), r3(max(n1c))) == (.458, .545)
       and (r3(min(n1s)), r3(max(n1s))) == (.362, .450) and (r3(min(w)), r3(max(w))) == (.870, .925))
 
-# ---------------- G4. Tabla 5c (bootstrap pareado) ----------------
-print("\n== G4 · Tabla 5c (bootstrap pareado por persona; mismo procedimiento que verificar_g1_comparacion.py) ==")
+# ---------------- Dedicados frente al EMG-MLP (bootstrap pareado) ----------------
+print("\n== Dedicados frente al EMG-MLP (bootstrap pareado por persona; mismo procedimiento que verificar_flexible_vs_dedicados.py) ==")
 def f1m(yy, pp):
     return f1_score(yy, pp, average="macro", labels=[0, 1, 2, 3, 4], zero_division=0)
 
@@ -219,11 +219,11 @@ for c in CTRL:
     esp = T5C[c]
     ok = (r1(obs), r1(lo), r1(hi), gana) == esp
     lect = "incluye 0" if lo <= 0 <= hi else ("mejor el dedicado" if lo > 0 else "mejor el EMG-MLP")
-    check(f"Tabla 5c, {NOM[c]}: {esp[0]:+.1f} [{esp[1]:+.1f}, {esp[2]:+.1f}], dedicado arriba en {esp[3]} de 16",
+    check(f"Dedicado - EMG-MLP, {NOM[c]}: {esp[0]:+.1f} [{esp[1]:+.1f}, {esp[2]:+.1f}], dedicado arriba en {esp[3]} de 16",
           f"{obs:+.2f} [{lo:+.2f}, {hi:+.2f}], dedicado arriba en {gana} de 16 personas ({lect})", ok)
 
-# ---------------- G5. Tabla 6 (prueba) y lectura ----------------
-print("\n== G5 · Tabla 6, columnas de prueba ==")
+# ---------------- Ablación sin LSTM (prueba) y lectura ----------------
+print("\n== Ablación sin LSTM, columnas de prueba ==")
 dt, dclase = {}, {}
 for c in SIN_EMG:
     con, sin = MET[("flexible", c)], MET[("flexible_sin_lstm", c)]
@@ -231,13 +231,13 @@ for c in SIN_EMG:
     dclase[c] = con["clase"] - sin["clase"]
     esp = T6[c]
     ok = (r3(con["f1"]), r3(sin["f1"]), r3(dt[c])) == esp[3:]
-    check(f"Tabla 6, {NOM[c]}: prueba {esp[3]:.3f} / {esp[4]:.3f} / {esp[5]:+.3f}",
+    check(f"Sin LSTM, {NOM[c]}: prueba {esp[3]:.3f} / {esp[4]:.3f} / {esp[5]:+.3f}",
           f"{con['f1']:.4f} / {sin['f1']:.4f} / {dt[c]:+.4f}", ok)
 mc, ms = med["flexible"], med["flexible_sin_lstm"]
-check(f"Tabla 6, media de prueba: {T6_MEDIA[3]:.3f} / {T6_MEDIA[4]:.3f} / {T6_MEDIA[5]:+.3f}",
+check(f"Sin LSTM, media de prueba: {T6_MEDIA[3]:.3f} / {T6_MEDIA[4]:.3f} / {T6_MEDIA[5]:+.3f}",
       f"{mc:.4f} / {ms:.4f} / {mc - ms:+.4f}", (r3(mc), r3(ms), r3(mc - ms)) == T6_MEDIA[3:])
 
-print("\n== G5 · Lectura (prueba) ==")
+print("\n== Lectura de la ablación (prueba) ==")
 v = list(dt.values())
 check("Sin la LSTM el F1 macro baja en las 6 combinaciones, 0.020 a 0.033 en prueba",
       f"{min(v):+.4f} a {max(v):+.4f}", all(x > 0 for x in v) and (r3(min(v)), r3(max(v))) == (.020, .033))
@@ -253,9 +253,9 @@ solap = [NOM[c] for c in SIN_EMG if IC[("flexible_sin_lstm", c)][1] > IC[("flexi
 check("En prueba los intervalos de confianza (con y sin LSTM) se solapan en parte",
       f"se solapan en {len(solap)} de 6: {solap}", len(solap) > 0)
 
-# ---------------- Opcional: columnas de VC de la Tabla 6 ----------------
+# ---------------- Opcional: columnas de VC de la ablación sin LSTM ----------------
 if args.mlflow:
-    print("\n== G5 · Tabla 6, columnas de validación cruzada (MLflow) ==")
+    print("\n== Ablación sin LSTM, columnas de validación cruzada (MLflow) ==")
     import mlflow
     if not os.environ.get("MLFLOW_TRACKING_URI"):
         os.environ["MLFLOW_TRACKING_URI"] = input("MLFLOW_TRACKING_URI: ").strip()
@@ -264,7 +264,7 @@ if args.mlflow:
             os.environ["MLFLOW_TRACKING_USERNAME"] = u
             os.environ["MLFLOW_TRACKING_PASSWORD"] = getpass.getpass("MLFLOW_TRACKING_PASSWORD: ")
     mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
-    tmp = Path(tempfile.mkdtemp(prefix="g5_"))
+    tmp = Path(tempfile.mkdtemp(prefix="ablacion_"))
     cv = {}
     for mod, rid in [("flexible", "029cc677c3734b10959735a6e9246cb8"), ("flexible_sin_lstm", "c424e04708c34f04a5bfec810b705982")]:
         d = Path(mlflow.artifacts.download_artifacts(run_id=rid, artifact_path="resultados", dst_path=str(tmp / mod)))
@@ -274,15 +274,15 @@ if args.mlflow:
     for c in SIN_EMG:
         con, sin = cv["flexible"][c], cv["flexible_sin_lstm"][c]
         dv[c] = con - sin
-        check(f"Tabla 6, {NOM[c]}: VC {T6[c][0]:.3f} / {T6[c][1]:.3f} / {T6[c][2]:+.3f}",
+        check(f"Sin LSTM, {NOM[c]}: VC {T6[c][0]:.3f} / {T6[c][1]:.3f} / {T6[c][2]:+.3f}",
               f"{con:.4f} / {sin:.4f} / {dv[c]:+.4f}", (r3(con), r3(sin), r3(dv[c])) == T6[c][:3])
     mc, ms = np.mean(list(cv["flexible"].values())), np.mean(list(cv["flexible_sin_lstm"].values()))
-    check(f"Tabla 6, media de VC: {T6_MEDIA[0]:.3f} / {T6_MEDIA[1]:.3f} / {T6_MEDIA[2]:+.3f}",
+    check(f"Sin LSTM, media de VC: {T6_MEDIA[0]:.3f} / {T6_MEDIA[1]:.3f} / {T6_MEDIA[2]:+.3f}",
           f"{mc:.4f} / {ms:.4f} / {mc - ms:+.4f}", (r3(mc), r3(ms), r3(mc - ms)) == T6_MEDIA[:3])
     v = list(dv.values())
     check("Sin la LSTM el F1 macro baja en las 6 combinaciones, 0.026 a 0.056 en VC; misma dirección en VC y prueba",
           f"{min(v):+.4f} a {max(v):+.4f}", all(x > 0 for x in v) and (r3(min(v)), r3(max(v))) == (.026, .056))
 else:
-    print("\n(Columnas de VC de la Tabla 6 omitidas: añade --mlflow para revisarlas.)")
+    print("\n(Columnas de VC de la ablación sin LSTM omitidas: añade --mlflow para revisarlas.)")
 
 print(f"\n{'Todo coincide.' if fallos == 0 else f'{fallos} afirmación(es) no coinciden: revisar.'}")

@@ -1,4 +1,4 @@
-"""Pedido 3 de María José: comparaciones controladas en prueba, con cifras exactas e intervalos.
+"""Comparaciones controladas en prueba, con cifras exactas e intervalos.
 
 Todas son pareadas: los dos lados se evalúan sobre las mismas 44,985 épocas de las mismas 16 personas, y el IC95
 sale de un bootstrap que remuestrea personas (1,000 remuestreos, semilla 42) y recalcula la diferencia de F1 macro.
@@ -7,10 +7,10 @@ sale de un bootstrap que remuestrea personas (1,000 remuestreos, semilla 42) y r
   C. Aporte del EOG: EMG-MLP con y sin EOG (6 pares).
   D. Aporte del EMG: EMG-MLP con y sin EMG (6 pares).
 Cada grupo usa su propio generador con semilla 42 y recorre los pares en el orden de la tabla (así se reproducen
-la Tabla 5c y la parte C de verificar_g9.py).
+la tabla de diferencias con los dedicados y la parte C de verificar_emg_y_clase_m.py).
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/tabla3_comparaciones.py --probs resultados_test --salida reports/tables
+    python scripts/verificacion/tabla_comparaciones.py --probs resultados_test --salida reports/tables
 """
 import argparse
 import json
@@ -95,8 +95,8 @@ for grupo, pares in GRUPOS:
                             + [f"{v:.3f}" for v in pc]))
     md += ["", "\\* el IC95 no incluye el 0.", ""]
 md += ["Runs: " + "; ".join(f"{k} `{v}`" for k, v in RUN.items()) + "."]
-(sal / "tabla3_comparaciones.md").write_text("\n".join(md) + "\n", encoding="utf-8")
-(sal / "tabla3_comparaciones.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
+(sal / "tabla_comparaciones.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+(sal / "tabla_comparaciones.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
 print("\n".join(md))
 
 # ---- comprobaciones contra lo ya verificado ----
@@ -110,11 +110,11 @@ print()
 t5c = {"Fpz-Cz": (1.5, 0.5, 2.4, 13), "Pz-Oz": (0.6, -0.7, 2.0, 8), "Fpz-Cz + Pz-Oz": (1.1, -0.2, 2.5, 8),
        "Fpz-Cz + EOG": (-1.5, -2.6, -0.3, 4), "Fpz-Cz + Pz-Oz + EOG + EMG": (-1.2, -2.8, 0.2, 4)}
 obs = {k: (r1(RES[("B1", k)]["d"]), r1(RES[("B1", k)]["lo"]), r1(RES[("B1", k)]["hi"]), RES[("B1", k)]["gana"]) for k in t5c}
-check("B1 reproduce la Tabla 5c", obs, obs == t5c)
+check("B1 reproduce la tabla de diferencias con los dedicados", obs, obs == t5c)
 emg = {f"{NOM[c]} → + EMG": v for c, v in zip(BASES, [(0.9, 0.2, 1.5), (0.6, -0.6, 1.8), (1.0, 0.3, 1.6), (0.5, 0.1, 0.8), (0.6, 0.2, 1.2), (0.3, -0.1, 0.6)])}
 obs = {k: (r1(RES[("D", k)]["d"]), r1(RES[("D", k)]["lo"]), r1(RES[("D", k)]["hi"])) for k in emg}
-check("D reproduce la parte C de verificar_g9.py (aporte del EMG)", obs, obs == emg)
+check("D reproduce la parte C de verificar_emg_y_clase_m.py (aporte del EMG)", obs, obs == emg)
 t6 = [3.1, 3.3, 2.9, 2.2, 2.6, 2.0]
 obs = [r1(RES[("A", NOM[c])]["d"]) for c in BASES]
-check("A reproduce el Δ de prueba de la Tabla 6 (en puntos)", obs, obs == t6)
+check("A reproduce el Δ de prueba de la ablación sin LSTM (en puntos)", obs, obs == t6)
 print(f"\nArchivos en {sal}. {'Todo coincide.' if fallos == 0 else f'{fallos} no coinciden: revisar.'}")

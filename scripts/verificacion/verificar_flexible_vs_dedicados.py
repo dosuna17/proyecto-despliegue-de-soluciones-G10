@@ -1,16 +1,16 @@
-"""Revisa a fondo la comparación "modelo dedicado frente al modelo seleccionado (EMG-MLP)" de G1.
+"""Revisa a fondo la comparación "modelo dedicado frente al modelo seleccionado (EMG-MLP)".
 
 Parte 1 (siempre): validación cruzada pliegue por pliegue, desde los JSON de cada pliegue en MLflow.
     - ¿Los dos modelos se validaron sobre las mismas épocas en cada pliegue?
     - La diferencia pareada por pliegue (mismas personas): ¿en cuántos pliegues gana el dedicado?
 Parte 2 (opcional): prueba con bootstrap PAREADO por persona, desde las probabilidades ya guardadas.
     No vuelve a evaluar el test ni cambia nada: analiza las predicciones del único test que se corrió.
-    Pasa --probs con la carpeta resultados_test (bajada de Drive sueno_colab/resultados_test; basta con
+    Pasa --probs con la carpeta resultados_test (predicciones guardadas del test; basta con
     resultados_test.json y los probs_*.npz de flexible_emg_mlp y de los 5 controles).
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/verificar_g1_comparacion.py
-    python scripts/verificacion/verificar_g1_comparacion.py --probs "C:\\...\\resultados_test"
+    python scripts/verificacion/verificar_flexible_vs_dedicados.py
+    python scripts/verificacion/verificar_flexible_vs_dedicados.py --probs resultados_test
 """
 import argparse
 import getpass

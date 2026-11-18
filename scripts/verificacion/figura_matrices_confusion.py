@@ -1,4 +1,4 @@
-"""G6 · Figura 6: matrices de confusión del modelo seleccionado (EMG-MLP) en prueba, y verificación de lo que dice el texto.
+"""Matrices de confusión del modelo seleccionado (EMG-MLP) en prueba, y verificación de lo que dice el texto.
 
 Genera la figura desde las predicciones ya guardadas del único test (no vuelve a evaluar nada):
     (a) Fpz-Cz sola   (b) la mejor combinación: Fpz-Cz + EOG + EMG
@@ -6,8 +6,8 @@ Cada celda: % de la fila (épocas reales de ese estadio) y, debajo, el número d
 Paleta: la misma escala azul de la matriz de confusión del tablero (app/dashboard/graficas.py, tema claro).
 
 Uso, desde la raíz del repositorio:
-    python "Claude outputs\\figura6_matrices.py" --probs "Claude outputs\\resultados_test_completo"
-Salida: Claude outputs\\figura6_matrices_confusion.png (300 dpi), .pdf y una copia en gris para revisarla.
+    python scripts/verificacion/figura_matrices_confusion.py --probs resultados_test --salida reports/figures
+Salida: <salida>/figura_matrices_confusion.png (300 dpi), .pdf y una copia en gris para revisarla.
 """
 import argparse
 from pathlib import Path
@@ -25,7 +25,7 @@ PANELES = [("eeg_fpz_cz", "(a) Fpz-Cz"),
            ("eeg_fpz_cz__eog_horizontal__emg_submental", "(b) Fpz-Cz + EOG + EMG")]
 ESCALA = ["#cde2fb", "#5598e7", "#104281"]          # graficas.matriz_confusion, tema claro
 TINTA = "#000000"                   # negro puro: con #0b0b0b del tablero el contraste mínimo baja a 4.4
-# F1 por estadio de la Tabla 5 (EMG-MLP), para comprobar que la figura sale de los mismos datos
+# F1 por estadio reportado en prueba (EMG-MLP), para comprobar que la figura sale de los mismos datos
 F1_T5 = {"eeg_fpz_cz": (.910, .508, .841, .775, .710),
          "eeg_fpz_cz__eog_horizontal__emg_submental": (.915, .537, .851, .780, .835)}
 F1_MACRO_T5 = {"eeg_fpz_cz": .749, "eeg_fpz_cz__eog_horizontal__emg_submental": .784}
@@ -96,7 +96,7 @@ for ax, (combo, titulo) in zip(ejes, PANELES):
 cb = fig.colorbar(im, ax=ejes, shrink=0.8, pad=0.02)
 cb.set_label("% de las épocas reales del estadio (fila)", fontsize=8)
 cb.ax.tick_params(labelsize=8)
-png, pdf, gris = sal / "figura6_matrices_confusion.png", sal / "figura6_matrices_confusion.pdf", sal / "figura6_matrices_confusion_gris.png"
+png, pdf, gris = sal / "figura_matrices_confusion.png", sal / "figura_matrices_confusion.pdf", sal / "figura_matrices_confusion_gris.png"
 fig.savefig(png, dpi=300)
 fig.savefig(pdf)
 plt.close(fig)
@@ -114,7 +114,7 @@ check("Las dos matrices usan las mismas 44,985 épocas de prueba (mismas épocas
 for c, t in PANELES:
     f1 = 2 * np.diag(CM[c]) / (CM[c].sum(0) + CM[c].sum(1))
     ok = tuple(float(f"{v:.3f}") for v in f1) == F1_T5[c] and float(f"{f1.mean():.3f}") == F1_MACRO_T5[c]
-    check(f"{t}: el F1 por estadio y el F1 macro que salen de la matriz son los de la Tabla 5",
+    check(f"{t}: el F1 por estadio y el F1 macro que salen de la matriz son los reportados en prueba",
           " ".join(f"{k} {v:.3f}" for k, v in zip(CLASES, f1)) + f" | macro {f1.mean():.3f}", ok)
 check("Cada fila suma 100 % (normalizada por fila)", [np.round(PCT[c].sum(1), 6).tolist() for c in PCT],
       all(np.allclose(PCT[c].sum(1), 100) for c in PCT))

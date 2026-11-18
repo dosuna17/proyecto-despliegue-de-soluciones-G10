@@ -1,4 +1,4 @@
-"""G7 · Figura 7: sobreajuste (curvas por pliegue) y variabilidad entre personas, con verificación del texto.
+"""Sobreajuste (curvas por pliegue) y variabilidad entre personas, con verificación del texto.
 
 (a) pérdida y (b) F1 macro de entrenamiento y validación, época a época, en los 5 pliegues de la validación cruzada
     del modelo seleccionado (EMG-MLP). Salen del historial guardado en resultados/flexible_emg_mlp_pliegueN.json.
@@ -6,10 +6,10 @@
 No se reentrena ni se vuelve a evaluar nada.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/figura7_sobreajuste.py --probs resultados_test
+    python scripts/verificacion/figura_sobreajuste.py --probs resultados_test
     (pide el URI, el usuario y la clave de MLflow para bajar los JSON de cada pliegue de los 8 modelos)
     --cv-dir CARPETA usa JSON ya bajados (MODELO_pliegueN.json) en vez de MLflow.
-Salida (por defecto en la carpeta del script; usar --salida reports/figures): figura7_sobreajuste.png (300 dpi), .pdf y una copia en gris.
+Salida (por defecto en la carpeta del script; usar --salida reports/figures): figura_sobreajuste.png (300 dpi), .pdf y una copia en gris.
 """
 import argparse
 import getpass
@@ -61,7 +61,7 @@ else:
             os.environ["MLFLOW_TRACKING_USERNAME"] = u
             os.environ["MLFLOW_TRACKING_PASSWORD"] = getpass.getpass("MLFLOW_TRACKING_PASSWORD: ")
     mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
-    tmp = Path(tempfile.mkdtemp(prefix="g7_"))
+    tmp = Path(tempfile.mkdtemp(prefix="sobreajuste_"))
     carpetas = {m: Path(mlflow.artifacts.download_artifacts(run_id=rid, artifact_path="resultados", dst_path=str(tmp / m)))
                 for m, rid in RUNS.items()}
 PL = {}
@@ -133,7 +133,7 @@ axp.text(0.98, 0.04, f"línea: media {vals.mean():.3f} ± {vals.std(ddof=1):.3f}
 axp.grid(axis="y", color=REJILLA, lw=.6)
 for s in ("top", "right"):
     axp.spines[s].set_visible(False)
-png, pdf, gris = sal / "figura7_sobreajuste.png", sal / "figura7_sobreajuste.pdf", sal / "figura7_sobreajuste_gris.png"
+png, pdf, gris = sal / "figura_sobreajuste.png", sal / "figura_sobreajuste.pdf", sal / "figura_sobreajuste_gris.png"
 fig.savefig(png, dpi=300)
 fig.savefig(pdf)
 plt.close(fig)
@@ -142,7 +142,7 @@ Image.open(png).convert("L").save(gris, dpi=(300, 300))
 print(f"Figura guardada: {png}\n                 {pdf}\n                 {gris}\n")
 
 # ---------------- Verificación: curvas del EMG-MLP ----------------
-print("== G7 · Curvas por pliegue del modelo seleccionado (EMG-MLP) ==")
+print("== Curvas por pliegue del modelo seleccionado (EMG-MLP) ==")
 P = PL[SEL]
 H = [x["historial"] for x in P]
 B = [x["mejor_epoca"] for x in P]
@@ -174,7 +174,7 @@ check("Entre pliegues, el F1 de validación en la mejor época va de 0.712 a 0.7
       f"{[round(v, 3) for v in vb]}; rango {max(vb) - min(vb):.3f}", f3(min(vb), max(vb), max(vb) - min(vb)) == (0.712, 0.779, 0.068))
 
 # ---------------- Verificación: personas ----------------
-print("\n== G7 · Variabilidad entre personas de prueba (EMG-MLP, Fpz-Cz + EOG + EMG) ==")
+print("\n== Variabilidad entre personas de prueba (EMG-MLP, Fpz-Cz + EOG + EMG) ==")
 v = np.array(list(pp.values()))
 check("16 personas: F1 macro por persona 0.758 ± 0.072, mínimo 0.611 y máximo 0.877",
       f"{len(v)} personas; {v.mean():.4f} ± {v.std(ddof=1):.4f}; mínimo {v.min():.4f}, máximo {v.max():.4f}",
@@ -189,7 +189,7 @@ check("La persona con peor F1 (58) y la con mejor (07) son las mismas con Fpz-Cz
       peor == "58" and mejor == "07" and misma)
 
 # ---------------- Los 8 modelos: brecha y épocas ----------------
-print("\n== G7 · Los 8 modelos (brecha media = F1 de entrenamiento menos F1 de validación en la mejor época) ==")
+print("\n== Los 8 modelos (brecha media = F1 de entrenamiento menos F1 de validación en la mejor época) ==")
 RES = {}
 for m, P in PL.items():
     H = [x["historial"] for x in P]

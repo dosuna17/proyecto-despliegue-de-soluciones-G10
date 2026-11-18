@@ -1,4 +1,4 @@
-"""Pedido 5 de María José: F1 macro por persona (las 16 de prueba) con su edad, para comparar jóvenes y mayores.
+"""F1 macro por persona (las 16 de prueba) con su edad, para comparar jóvenes y mayores.
 
 F1 macro de cada persona con sus dos noches juntas, promediado sobre los estadios que esa persona tiene
 (igual que metricas_por_persona del script 08). Modelo: EMG-MLP (run 95951e2a2cfd4368970636cc6bdea9b5).
@@ -7,7 +7,7 @@ Jóvenes y mayores se separan por la mediana de edad de las 16 personas; con 16 
 descriptiva: se reporta la correlación de Spearman y la prueba de Mann-Whitney como apoyo, no como confirmación.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/tabla5_por_persona.py --probs resultados_test --salida reports/tables
+    python scripts/verificacion/tabla_por_persona.py --probs resultados_test --salida reports/tables
 """
 import argparse
 import json
@@ -67,7 +67,7 @@ edades = np.array([INFO[q][0] for q in personas])
 corte = float(np.median(edades))
 jov = edades <= corte
 
-md = [f"**Tabla 5a. F1 macro por persona de prueba** (EMG-MLP, run `{RUN}`; dos noches por persona; ordenadas por edad)", "",
+md = [f"**F1 macro por persona de prueba** (EMG-MLP, run `{RUN}`; dos noches por persona; ordenadas por edad)", "",
       "| Persona | Edad | Sexo | Épocas | % N1 | % N3 | " + " | ".join(f"F1 {NOM[c]}" for c in COLS) + " |",
       "|---" * (6 + len(COLS)) + "|"]
 csv = ["persona;edad;sexo;epocas;pct_N1;pct_N3;" + ";".join(f"f1_{c}" for c in NOM)]
@@ -78,7 +78,7 @@ for q in personas:
     csv.append(";".join([q, str(INFO[q][0]), INFO[q][1], str(n), f"{100 * fr[1]:.2f}", f"{100 * fr[3]:.2f}"]
                         + [f"{F[c][0][q]:.4f}" for c in NOM]))
 
-md += ["", f"**Tabla 5b. Jóvenes (≤ {corte:.1f} años, n = {jov.sum()}; edades {edades[jov].min()}–{edades[jov].max()}) frente a "
+md += ["", f"**Jóvenes (≤ {corte:.1f} años, n = {jov.sum()}; edades {edades[jov].min()}–{edades[jov].max()}) frente a "
        f"mayores (> {corte:.1f}, n = {(~jov).sum()}; {edades[~jov].min()}–{edades[~jov].max()})**, F1 macro media ± desviación por persona", "",
        "| Combinación | Jóvenes | Mayores | Diferencia | Mann-Whitney p | Spearman ρ edad–F1 (p) |", "|---|---|---|---|---|---|"]
 RES = {}
@@ -93,8 +93,8 @@ for c, n in NOM.items():
 pn1 = np.array([frac[q][1][1] for q in personas]); pn3 = np.array([frac[q][1][3] for q in personas])
 md += ["", f"Composición del sueño: N1 es el {100 * pn1[jov].mean():.1f} % de las épocas en los jóvenes y el {100 * pn1[~jov].mean():.1f} % en los mayores; "
        f"N3, el {100 * pn3[jov].mean():.1f} % y el {100 * pn3[~jov].mean():.1f} %."]
-(sal / "tabla5_por_persona.md").write_text("\n".join(md) + "\n", encoding="utf-8")
-(sal / "tabla5_por_persona.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
+(sal / "tabla_por_persona.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+(sal / "tabla_por_persona.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
 print("\n".join(md))
 
 fallos = 0
@@ -104,7 +104,7 @@ def check(a, o, ok):
     print(f"[{'OK ' if ok else 'NO '}] {a}\n       observado: {o}")
 print()
 v = np.array([F[MEJOR][0][q] for q in personas])
-check("Fpz-Cz + EOG + EMG: 0.758 ± 0.072 por persona, de 0.611 (persona 58) a 0.877 (persona 07), igual que G7",
+check("Fpz-Cz + EOG + EMG: 0.758 ± 0.072 por persona, de 0.611 (persona 58) a 0.877 (persona 07), igual que figura_sobreajuste.py",
       f"{v.mean():.3f} ± {v.std(ddof=1):.3f}; mín {v.min():.3f} ({personas[v.argmin()]}), máx {v.max():.3f} ({personas[v.argmax()]})",
       (f"{v.mean():.3f}", f"{v.std(ddof=1):.3f}", f"{v.min():.3f}", f"{v.max():.3f}") == ("0.758", "0.072", "0.611", "0.877"))
 neg = [n for c, n in NOM.items() if RES[c]["rho"] < 0 and RES[c]["a"] > RES[c]["b"]]

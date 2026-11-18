@@ -1,8 +1,8 @@
-"""Verifica, con el código del repositorio y los datos, cada afirmación del párrafo de arquitectura de G1.
+"""Verifica, con el código del repositorio y los datos, cada afirmación del párrafo de arquitectura del artículo.
 
 Uso (desde la raíz del repositorio, con el entorno donde está torch):
-    python verificar_g1_arquitectura.py
-    python verificar_g1_arquitectura.py --npz <carpeta .npz 3 canales> --emg <carpeta .npz EMG>
+    python verificar_arquitectura.py
+    python verificar_arquitectura.py --npz <carpeta .npz 3 canales> --emg <carpeta .npz EMG>
 
 No entrena ni modifica nada: construye los modelos, los inspecciona y lee un archivo de datos.
 """

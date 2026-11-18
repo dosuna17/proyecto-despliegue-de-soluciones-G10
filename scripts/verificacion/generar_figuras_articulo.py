@@ -1,4 +1,4 @@
-"""Pedido 7 de María José: figuras de aprendizaje profundo para el artículo (reports/figures/aprendizaje_profundo).
+"""Figuras de aprendizaje profundo para el artículo (reports/figures/aprendizaje_profundo).
 
 Nombres y contenido según reports/figures/aprendizaje_profundo/README.md (origin/main):
   01_arquitectura_flexible.pdf      Esquema del modelo flexible: señales + marcas de presencia y rama EMG.
@@ -13,8 +13,8 @@ predicciones guardadas del único test, de las probabilidades de validación y d
 Modelo seleccionado: EMG-MLP, run 95951e2a2cfd4368970636cc6bdea9b5.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/figuras_pedido7.py --probs "Claude outputs/resultados_test_completo" ^
-           --val-probs "Claude outputs/probs_validacion" --revision "Claude outputs/entregable_majo/figuras_revision"
+    python scripts/verificacion/generar_figuras_articulo.py --probs resultados_test ^
+           --val-probs res_emg/probs_validacion --revision figuras_revision
     (pide el URI, el usuario y la clave de MLflow para bajar los historiales de los 5 pliegues)
     --cv-dir CARPETA usa flexible_emg_mlp_pliegueN.json ya bajados en vez de MLflow.
     --revision CARPETA guarda además copias PNG en color y en gris para revisar (no van al repositorio).
@@ -162,7 +162,7 @@ else:
             os.environ["MLFLOW_TRACKING_PASSWORD"] = getpass.getpass("MLFLOW_TRACKING_PASSWORD: ")
     mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
     cvdir = Path(mlflow.artifacts.download_artifacts(run_id=RUN, artifact_path="resultados",
-                                                    dst_path=tempfile.mkdtemp(prefix="pedido7_")))
+                                                    dst_path=tempfile.mkdtemp(prefix="figuras_articulo_")))
 PL = sorted((json.load(open(a, encoding="utf-8")) for a in cvdir.rglob(f"{MODELO}_pliegue[0-9].json")), key=lambda x: x["pliegue"])
 assert len(PL) == 5, f"se esperaban 5 pliegues y hay {len(PL)}"
 fig, ejes = plt.subplots(2, 5, figsize=(7.2, 4.0), sharey="row", sharex="col", layout="constrained")
@@ -339,7 +339,7 @@ fig.legend(handles=[Line2D([], [], ls="", marker="o", color=OSCURO, label=f"≤ 
            loc="outside lower center", frameon=False, ncol=3)
 guardar(fig, "personas")
 v = np.array([FP[MEJOR][q] for q in personas])
-check("05: Fpz-Cz + EOG + EMG 0.758 ± 0.072 por persona, de 0.611 a 0.877 (Tabla 5a / G7); 16 personas por caja",
+check("05: Fpz-Cz + EOG + EMG 0.758 ± 0.072 por persona, de 0.611 a 0.877 (tabla_por_persona.py y figura_sobreajuste.py); 16 personas por caja",
       f"{v.mean():.3f} ± {v.std(ddof=1):.3f}; {v.min():.3f}–{v.max():.3f}; cajas {[len(z) for z in datos]}",
       (f"{v.mean():.3f}", f"{v.std(ddof=1):.3f}", f"{v.min():.3f}", f"{v.max():.3f}") == ("0.758", "0.072", "0.611", "0.877")
       and all(len(z) == 16 for z in datos))
@@ -402,7 +402,7 @@ ejes[5].legend(handles=[Line2D([], [], color=OSCURO, ls="--", lw=1.4, label="Val
 guardar(fig, "umbrales")
 jt = J["umbral_global_junto"]["por_clase"]["test"]["clases"]
 f3 = lambda t: (round(float(t[0]), 3), round(float(t[1]), 3))
-check("06: punto de prueba de cada estadio igual a la cobertura y exactitud guardadas por el 08 (Tabla 4a)",
+check("06: punto de prueba de cada estadio igual a la cobertura y exactitud guardadas por el 08 (tabla_confianza.py)",
       {c: f3(PUNTO[(c, "test")]) for c in CLASES},
       all(f3(PUNTO[(c, "test")]) == f3((jt[c]["cobertura"], jt[c]["exactitud_aceptadas"])) for c in CLASES))
 check("06: punto de validación de cada estadio igual al guardado al fijar los umbrales",

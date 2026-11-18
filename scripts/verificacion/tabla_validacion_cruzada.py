@@ -1,4 +1,4 @@
-"""Pedido 2 de María José: validación cruzada de los 8 modelos, F1 macro media ± desviación entre los 5 pliegues,
+"""Validación cruzada de los 8 modelos, F1 macro media ± desviación entre los 5 pliegues,
 en validación y en entrenamiento, con el id del run de MLflow de cada cifra.
 
 De cada pliegue se toma su mejor época (la de mayor F1 macro de validación, la que se guardó):
@@ -6,10 +6,10 @@ De cada pliegue se toma su mejor época (la de mayor F1 macro de validación, la
     el promedio de sus combinaciones (todas, y solo las 6 sin EMG, que es el criterio de selección).
   - F1 de entrenamiento: train_macro_f1 de esa época en el historial. Se mide durante la época, con abandono
     activo y con los pesos cambiando, y en los flexibles junta todas las combinaciones.
-Desviación entre pliegues poblacional (ddof = 0), igual que la Tabla 4a y que el resumen del script 06.
+Desviación entre pliegues poblacional (ddof = 0), igual que el resumen del script 06.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/tabla2_validacion_cruzada.py --salida "Claude outputs/entregable_majo"
+    python scripts/verificacion/tabla_validacion_cruzada.py --salida reports/tables
     (pide el URI, el usuario y la clave de MLflow si no están en el entorno)
 """
 import argparse
@@ -56,7 +56,7 @@ else:
             os.environ["MLFLOW_TRACKING_USERNAME"] = u
             os.environ["MLFLOW_TRACKING_PASSWORD"] = getpass.getpass("MLFLOW_TRACKING_PASSWORD: ")
     mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
-    tmp = Path(tempfile.mkdtemp(prefix="tabla2_"))
+    tmp = Path(tempfile.mkdtemp(prefix="tabla_vc_"))
     carpetas = {m: Path(mlflow.artifacts.download_artifacts(run_id=rid, artifact_path="resultados", dst_path=str(tmp / m)))
                 for m, rid in RUNS.items()}
 
@@ -78,8 +78,8 @@ for m in RUNS:
                   brecha=ms(np.array(ent) - np.array(val_todas)), mejores=[x["mejor_epoca"] for x in pl])
     por_comb[m] = {c: ms(v) for c, v in val_c.items()}
 
-# ---- Tabla 2a: por modelo ----
-md = ["**Tabla 2a. Validación cruzada por modelo** (5 pliegues por persona, 62 personas de entrenamiento; media ± desviación entre pliegues, "
+# ---- por modelo ----
+md = ["**Validación cruzada por modelo** (5 pliegues por persona, 62 personas de entrenamiento; media ± desviación entre pliegues, "
       "F1 macro en la mejor época de cada pliegue)", "",
       "| Modelo | Run de MLflow | Combinaciones | F1 validación (todas sus combinaciones) | F1 validación (6 sin EMG) | F1 entrenamiento | Entrenamiento − validación | Mejores épocas |",
       "|---|---|---|---|---|---|---|---|"]
@@ -90,8 +90,8 @@ for m, r in res.items():
     v6 = r["val6"] or (float("nan"), float("nan"))
     csv.append(";".join([m, RUNS[m], str(r["n"])] + [f"{x:.4f}" for x in (*r["val"], *v6, *r["ent"], *r["brecha"])] + [str(r["mejores"])]))
 
-# ---- Tabla 2b: por combinación (la Tabla 4a, con run) ----
-md += ["", "**Tabla 2b. F1 macro de validación por combinación** (media ± desviación entre pliegues)", "",
+# ---- por combinación (con run) ----
+md += ["", "**F1 macro de validación por combinación** (media ± desviación entre pliegues)", "",
        "| Combinación | " + " | ".join(NOMBRE[m] for m in res if m.startswith("flexible")) + " | Dedicado |",
        "|---" * (2 + sum(m.startswith("flexible") for m in res)) + "|"]
 for c, n in COMB.items():
@@ -100,11 +100,11 @@ for c, n in COMB.items():
     celdas.append(fmt(por_comb[ded][c]) if ded in por_comb else "—")
     md.append(f"| {n} | " + " | ".join(celdas) + " |")
 md += ["", "Runs: " + "; ".join(f"{NOMBRE[m]} `{RUNS[m]}`" for m in res) + "."]
-(sal / "tabla2_validacion_cruzada.md").write_text("\n".join(md) + "\n", encoding="utf-8")
-(sal / "tabla2_validacion_cruzada.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
+(sal / "tabla_validacion_cruzada.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+(sal / "tabla_validacion_cruzada.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
 print("\n".join(md))
 
-# ---- comprobaciones contra lo ya verificado (G3) ----
+# ---- comprobaciones contra lo ya verificado (verificar_validacion_cruzada.py) ----
 fallos = 0
 def check(a, o, ok):
     global fallos
@@ -113,7 +113,7 @@ def check(a, o, ok):
 r3 = lambda x: float(f"{x:.3f}")
 print()
 if "flexible_emg_mlp" in res:
-    check("EMG-MLP: F1 de validación por combinación igual a la Tabla 4a (Fpz-Cz 0.759 ± 0.022; las 4 señales 0.771 ± 0.034)",
+    check("EMG-MLP: F1 de validación por combinación igual a lo verificado en verificar_validacion_cruzada.py (Fpz-Cz 0.759 ± 0.022; las 4 señales 0.771 ± 0.034)",
           f"{fmt(por_comb['flexible_emg_mlp'][E])}; {fmt(por_comb['flexible_emg_mlp'][f'{E}__{P}__{EO}__{M}'])}",
           (r3(por_comb["flexible_emg_mlp"][E][0]), r3(por_comb["flexible_emg_mlp"][E][1])) == (0.759, 0.022)
           and (r3(por_comb["flexible_emg_mlp"][f"{E}__{P}__{EO}__{M}"][0]), r3(por_comb["flexible_emg_mlp"][f"{E}__{P}__{EO}__{M}"][1])) == (0.771, 0.034))
@@ -122,7 +122,7 @@ if {"flexible_emg_mlp", "flexible"} <= set(res):
           f"{res['flexible_emg_mlp']['val6'][0]:.6f} frente a {res['flexible']['val6'][0]:.6f}",
           abs(res["flexible_emg_mlp"]["val6"][0] - 0.7445) < 1e-4 and abs(res["flexible"]["val6"][0] - 0.7381) < 1e-4)
 if len(res) == 8:
-    check("Brecha media entrenamiento − validación: 0.011 a 0.036 en los flexibles y 0.036 a 0.082 en los dedicados (G7)",
+    check("Brecha media entrenamiento − validación: 0.011 a 0.036 en los flexibles y 0.036 a 0.082 en los dedicados (figura_sobreajuste.py)",
           ", ".join(f"{NOMBRE[m]} {r['brecha'][0]:+.3f}" for m, r in res.items()),
           (r3(min(r["brecha"][0] for m, r in res.items() if m.startswith("flex"))), r3(max(r["brecha"][0] for m, r in res.items() if m.startswith("flex")))) == (0.011, 0.036)
           and (r3(min(r["brecha"][0] for m, r in res.items() if m.startswith("control"))), r3(max(r["brecha"][0] for m, r in res.items() if m.startswith("control")))) == (0.036, 0.082))

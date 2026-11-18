@@ -1,4 +1,4 @@
-"""Pedido 1 de María José: tabla de prueba por combinación (EMG-MLP, 12 combinaciones) y la misma para el flexible
+"""Tabla de prueba por combinación (EMG-MLP, 12 combinaciones) y la misma para el flexible
 sin EMG (6), cada una con la fila de todas sus combinaciones juntas. Fuente: predicciones guardadas del único test.
 
 Columnas: exactitud, F1 macro [IC95], exactitud balanceada, kappa y F1 por estadio. IC95 por bootstrap por persona
@@ -6,8 +6,8 @@ Columnas: exactitud, F1 macro [IC95], exactitud balanceada, kappa y F1 por estad
 épocas de todas las combinaciones del modelo, y en el bootstrap cada persona lleva sus épocas de todas ellas.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/tabla1_test_por_combinacion.py --probs resultados_test --salida reports/tables
-Escribe tabla1_test_<modelo>.csv y .md, y comprueba las filas contra la Tabla 5 del documento.
+    python scripts/verificacion/tabla_test_por_combinacion.py --probs resultados_test --salida reports/tables
+Escribe tabla_test_<modelo>.csv y .md, y comprueba las filas contra los valores de prueba reportados en el artículo.
 """
 import argparse
 from pathlib import Path
@@ -24,7 +24,7 @@ NOM = {E: "Fpz-Cz", P: "Pz-Oz", f"{E}__{P}": "Fpz-Cz + Pz-Oz", f"{E}__{EO}": "Fp
        f"{P}__{EO}__{M}": "Pz-Oz + EOG + EMG", f"{E}__{P}__{EO}__{M}": "Fpz-Cz + Pz-Oz + EOG + EMG"}
 COMBOS = {"flexible_emg_mlp": list(NOM), "flexible": list(NOM)[:6]}
 CLASES = ["W", "N1", "N2", "N3", "REM"]
-# Tabla 5 del documento (EMG-MLP): F1 macro, kappa y exactitud, para comprobar
+# Valores de prueba reportados en el artículo (EMG-MLP): F1 macro, kappa y exactitud, para comprobar
 T5 = {E: (.749, .726, .799), P: (.714, .691, .776), f"{E}__{P}": (.756, .735, .806), f"{E}__{EO}": (.779, .758, .823),
       f"{P}__{EO}": (.748, .726, .800), f"{E}__{P}__{EO}": (.781, .761, .824), f"{E}__{M}": (.758, .734, .806),
       f"{P}__{M}": (.720, .699, .782), f"{E}__{P}__{M}": (.766, .745, .814), f"{E}__{EO}__{M}": (.784, .762, .826),
@@ -81,12 +81,12 @@ for modelo, combos in COMBOS.items():
         csv.append(";".join([nombre, str(r["n"])] + [f"{v:.4f}" for v in (r["acc"], r["f1"], r["lo"], r["hi"], r["bal"], r["kappa"], *r["clase"])]))
         md.append(f"| {nombre} | {r['acc']:.3f} | {r['f1']:.3f} [{r['lo']:.3f}, {r['hi']:.3f}] | {r['bal']:.3f} | {r['kappa']:.3f} | "
                   + " | ".join(f"{v:.3f}" for v in r["clase"]) + " |")
-    (sal / f"tabla1_test_{modelo}.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
-    (sal / f"tabla1_test_{modelo}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    (sal / f"tabla_test_{modelo}.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
+    (sal / f"tabla_test_{modelo}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md), "\n")
     if modelo == "flexible_emg_mlp":
         malos = [n for (n, r), c in zip(filas, combos) if tuple(float(f"{v:.3f}") for v in (r["f1"], r["kappa"], r["acc"])) != T5[c]]
-        print(f"[{'OK ' if not malos else 'NO '}] Las 12 filas coinciden con la Tabla 5 del documento (F1, κ, exactitud)"
+        print(f"[{'OK ' if not malos else 'NO '}] Las 12 filas coinciden con los valores reportados (F1, κ, exactitud)"
               + (f": difieren {malos}" if malos else ""))
         fallos += bool(malos)
 print(f"\nArchivos en {sal}. {'Todo coincide.' if not fallos else 'Revisar.'}")

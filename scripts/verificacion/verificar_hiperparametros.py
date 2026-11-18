@@ -1,7 +1,7 @@
-"""Verifica, con el código y el JSON del modelo final, los hiperparámetros de NUESTRO modelo para la Tabla 3 (G2).
+"""Verifica, con el código y el JSON del modelo final, los hiperparámetros de nuestro modelo (tabla de hiperparámetros del artículo).
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/verificar_g2_hiperparametros.py
+    python scripts/verificacion/verificar_hiperparametros.py
     (pide el URI, el usuario y la clave de MLflow si no están en el entorno, para leer el JSON del modelo final)
 
 La columna del TinySleepNet original no se verifica aquí: sale del repositorio oficial de los autores
@@ -82,7 +82,7 @@ fj = mlflow.artifacts.download_artifacts(run_id="95951e2a2cfd4368970636cc6bdea9b
                                          artifact_path="modelo_final/flexible_emg_mlp_final.json", dst_path=tempfile.mkdtemp())
 info = json.load(open(fj, encoding="utf-8"))
 fila("Validación cruzada", "paciencia 5 épocas propias sobre el F1 macro medio de las 12 combinaciones (los 5 pliegues pararon por paciencia)",
-     "verificar_g1_entrenamiento.py, parte C")
+     "verificar_entrenamiento.py, parte C")
 fila("Modelo final", f"{info['n_epocas']} épocas fijas (media de las mejores de la VC = {info['epocas_cv']}), sin validación ni parada temprana; "
                      f"noche completa={info['noche_completa']}, {info['n_grabaciones']} grabaciones, {info['n_epocas_totales_entrenamiento']:,} épocas de sueño",
      "modelo_final/flexible_emg_mlp_final.json del run campeón")

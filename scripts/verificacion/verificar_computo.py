@@ -1,11 +1,11 @@
-"""G11 · Cómputo: parámetros y tiempos de entrenamiento de los 8 modelos, desde MLflow.
+"""Cómputo: parámetros y tiempos de entrenamiento de los 8 modelos, desde MLflow.
 
 Lee de cada run los JSON por pliegue (resultados/MODELO_pliegueN.json: segundos por época de entrenamiento y
 de validación) y el JSON y los pesos del modelo final (modelo_final/MODELO_final.json y .pth). No entrena nada.
 Los tiempos son de cómputo (suma de pliegues), no de reloj: los pliegues pudieron correr en sesiones paralelas.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/verificar_g11.py --inferencia
+    python scripts/verificacion/verificar_computo.py --inferencia
     (pide el URI, el usuario y la clave de MLflow si no están en el entorno)
 """
 import argparse
@@ -48,7 +48,7 @@ else:
             os.environ["MLFLOW_TRACKING_USERNAME"] = u
             os.environ["MLFLOW_TRACKING_PASSWORD"] = getpass.getpass("MLFLOW_TRACKING_PASSWORD: ")
     mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
-    tmp = Path(tempfile.mkdtemp(prefix="g11_"))
+    tmp = Path(tempfile.mkdtemp(prefix="computo_"))
     carp, fin, tags = {}, {}, {}
     for m, rid in RUNS.items():
         carp[m] = Path(mlflow.artifacts.download_artifacts(run_id=rid, artifact_path="resultados", dst_path=str(tmp / m)))
@@ -65,7 +65,7 @@ def n_parametros(pth):
                if hasattr(v, "numel") and "running_" not in k and "num_batches_tracked" not in k)
 
 T = {}
-print("== G11 · Tiempo de cómputo por modelo (suma de pliegues; segundos de GPU) ==")
+print("== Tiempo de cómputo por modelo (suma de pliegues; segundos de GPU) ==")
 print(f"   {'modelo':62s} {'VC (h)':>7s} {'s/época entr.':>14s} {'final (min)':>11s} {'s/época final':>14s} {'parámetros':>11s}")
 for m in RUNS:
     pl = sorted((json.load(open(a, encoding="utf-8")) for a in carp[m].glob(f"{m}_pliegue[0-9].json")), key=lambda x: x["pliegue"])

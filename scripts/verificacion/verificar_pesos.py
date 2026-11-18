@@ -1,10 +1,10 @@
-"""Verifica que el modelo campeón guardado (flexible_emg_mlp_final.pth) es la arquitectura descrita en G1.
+"""Verifica que el modelo campeón guardado (flexible_emg_mlp_final.pth) es la arquitectura descrita en el artículo.
 
 Por defecto descarga los archivos del run campeón de MLflow (los mismos que usa la API):
-    python scripts/verificacion/verificar_g1_pesos.py
+    python scripts/verificacion/verificar_pesos.py
     (pide el URI, el usuario y la clave de MLflow si no están en el entorno)
-O con archivos locales (por ejemplo, copiados de Drive sueno_colab/modelos_finales):
-    python scripts/verificacion/verificar_g1_pesos.py --pth <ruta .pth> --json <ruta .json>
+O con archivos locales (por ejemplo, los de modelos_finales/):
+    python scripts/verificacion/verificar_pesos.py --pth <ruta .pth> --json <ruta .json>
 
 No entrena ni modifica nada. La prueba de predicción usa UN sujeto de entrenamiento (nunca de prueba).
 """
@@ -80,7 +80,7 @@ print(f"       (otros datos del JSON: épocas de entrenamiento={info.get('n_epoc
       f"épocas de sueño usadas={info.get('n_epocas_totales_entrenamiento')}, minutos={info.get('segundos_totales', 0) / 60:.0f})")
 
 # --- 3. Pesos frente a la arquitectura ---
-print("\n== Pesos frente a la arquitectura de G1 ==")
+print("\n== Pesos frente a la arquitectura descrita ==")
 sd = torch.load(ruta_pth, map_location="cpu")
 modelo = TinySleepNetEMG(TinySleepNetConfig(use_rnn=True, input_channels=8, seq_length=15), rama="mlp")
 faltan, sobran = modelo.load_state_dict(sd, strict=False)

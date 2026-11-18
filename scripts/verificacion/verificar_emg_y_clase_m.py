@@ -1,4 +1,4 @@
-"""Verifica G9: cómo entra el EMG submental y la clase M como limitación.
+"""Verifica cómo entra el EMG submental y la clase M como limitación.
 
 Parte A. La señal: cabeceras de los EDF crudos de Sleep-EDF (sin librerías externas) y los .npz del EMG.
 Parte B. El modelo: la CNN no ve el EMG; la rama recibe los 30 valores originales (necesita torch y el repo).
@@ -7,8 +7,8 @@ Parte C. Cuánto aporta el EMG en prueba: EMG-MLP con y sin EMG sobre las mismas
 Parte D. La clase M: cuántas épocas hay en los hipnogramas y que no llegan a los datos evaluados.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/verificar_g9.py --probs resultados_test ^
-           --emg-dir "C:\\Users\\albam\\Desktop\\experimento_emg\\datos_emg\\epochs_emg_recortado"
+    python scripts/verificacion/verificar_emg_y_clase_m.py --probs resultados_test ^
+           --emg-dir data/interim/epochs_emg_recortado
 """
 import argparse
 import collections
@@ -61,7 +61,7 @@ def cabecera_edf(ruta):
     muestras = [int(x) for x in campo(off, 8)]
     return {e: (u, m / dur) for e, u, m in zip(etiquetas, unidades, muestras)}
 
-print("== G9 · Parte A. La señal del EMG ==")
+print("== Parte A. La señal del EMG ==")
 edf = Path(args.edf_dir)
 psg = sorted(edf.glob("*-PSG.edf"))
 cab = {f.name[:6]: cabecera_edf(f) for f in psg}
@@ -96,7 +96,7 @@ check("Es una envolvente (no la señal cruda): valores de pocos µV y un 4.2 % l
       f"{100 * neg / tot:.1f} % de valores < 0", r1(100 * neg / tot) == 4.2)
 
 # ---------------- Parte B: el modelo ----------------
-print("\n== G9 · Parte B. Cómo entra el EMG en el modelo ==")
+print("\n== Parte B. Cómo entra el EMG en el modelo ==")
 if args.sin_modelo:
     print("   (omitida con --sin-modelo)")
 else:
@@ -142,7 +142,7 @@ else:
           f"normalización en cargar_con_emg: {norm}; repetición: {'np.repeat(E, REPETIR' in src}", not norm)
 
 # ---------------- Parte C: aporte del EMG en prueba ----------------
-print("\n== G9 · Parte C. Aporte del EMG en prueba (EMG-MLP con y sin EMG, mismas épocas) ==")
+print("\n== Parte C. Aporte del EMG en prueba (EMG-MLP con y sin EMG, mismas épocas) ==")
 R = json.load(open(Path(args.probs) / "resultados_test.json", encoding="utf-8"))
 suj_rec = np.array([str(g)[3:5] for g in R["grabaciones"]])
 f1m = lambda y, p_: f1_score(y, p_, average="macro", labels=range(5), zero_division=0)
@@ -179,7 +179,7 @@ check("Donde más gana es REM (+1.7 a +1.9 puntos de F1) en Fpz-Cz, Pz-Oz, Fpz-C
       and r1(res["eeg_fpz_cz__eog_horizontal"]["pc"][4]) == 0.6)
 
 # ---------------- Parte D: la clase M ----------------
-print("\n== G9 · Parte D. La clase M (movimiento) ==")
+print("\n== Parte D. La clase M (movimiento) ==")
 def anotaciones(ruta):
     """Hipnograma EDF+: suma la duración (en épocas de 30 s) de cada anotación."""
     b = open(ruta, "rb").read()

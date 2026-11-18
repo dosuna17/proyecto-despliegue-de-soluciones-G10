@@ -1,4 +1,4 @@
-"""G8 · Figura 8 y verificación de los umbrales (cobertura vs exactitud y umbrales por clase) del EMG-MLP.
+"""Figura y verificación de los umbrales (cobertura vs exactitud y umbrales por clase) del EMG-MLP.
 
 Recalcula todo de forma independiente, sin cargar modelos ni volver a evaluar:
   Parte A (validación): con las probabilidades de validación de los 5 pliegues y las 12 combinaciones
@@ -10,9 +10,9 @@ Recalcula todo de forma independiente, sin cargar modelos ni volver a evaluar:
   Compara todo con lo guardado en resultados_test.json y con lo que dice el texto.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/figura8_umbrales.py --probs resultados_test ^
+    python scripts/verificacion/figura_umbrales.py --probs resultados_test ^
            --val-probs res_emg/probs_validacion
-Salida (por defecto en la carpeta del script; usar --salida reports/figures): figura8_umbrales.png (300 dpi), .pdf y una copia en gris.
+Salida (por defecto en la carpeta del script; usar --salida reports/figures): figura_umbrales.png (300 dpi), .pdf y una copia en gris.
 """
 import argparse
 import json
@@ -144,7 +144,7 @@ def aplicar_global(probs, y, suj, t, n_boot=1000, semilla=42):
     return resumen(cnt, idx)
 
 # ---------------- Parte A: validación ----------------
-print("== G8 · Parte A. Umbrales fijados con la validación cruzada (antes del test) ==")
+print("== Parte A. Umbrales fijados con la validación cruzada (antes del test) ==")
 check("Validación: 5 pliegues x 12 combinaciones = 60 archivos, 59,895 épocas por combinación (718,740 en total)",
       f"{len(pv)} archivos; {len(YV):,} épocas", len(pv) == 60 and len(YV) == 718740)
 tg, cg, eg = umbral_global(PV, YV)
@@ -175,7 +175,7 @@ check("Delta 5 es el mayor de {0, 5, 10} con exactitud global de lo aceptado >= 
       elegido == 0.05 and f3(ex_d[0.05], ex_d[0.10], cob_d[0.05], cob_d[0.0]) == (0.843, 0.814, 0.879, 0.805))
 
 # ---------------- Parte B: prueba ----------------
-print("\n== G8 · Parte B. Verificación en prueba (12 combinaciones juntas, umbrales ya fijados) ==")
+print("\n== Parte B. Verificación en prueba (12 combinaciones juntas, umbrales ya fijados) ==")
 check("Prueba: 12 combinaciones x 44,985 épocas = 539,820; 16 personas", f"{len(YT):,} épocas; {len(np.unique(ST))} personas",
       len(YT) == 539820 and len(np.unique(ST)) == 16)
 taus = {c: u5[c]["umbral"] for c in CLASES}
@@ -264,7 +264,7 @@ a2.legend(handles=[Line2D([], [], color=TINTA, lw=1.4, label="Meta"),
 for ax in (a1, a2):
     for s_ in ("top", "right"):
         ax.spines[s_].set_visible(False)
-png, pdf, gris = sal / "figura8_umbrales.png", sal / "figura8_umbrales.pdf", sal / "figura8_umbrales_gris.png"
+png, pdf, gris = sal / "figura_umbrales.png", sal / "figura_umbrales.pdf", sal / "figura_umbrales_gris.png"
 fig.savefig(png, dpi=300)
 fig.savefig(pdf)
 plt.close(fig)

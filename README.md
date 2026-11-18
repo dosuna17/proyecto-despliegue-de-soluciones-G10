@@ -102,7 +102,7 @@ Métricas en el conjunto de prueba (personas no vistas), 5 clases.
 | XGBoost | <!-- PENDIENTE (Santiago): canales --> | 0.728 | 0.671 | 0.633 | | |
 | XGBoost | Fpz-Cz | 0.670 | 0.610 | 0.560 | | |
 
-El campeón (un solo modelo para las 12 combinaciones de señales) tiene 1,558,165 parámetros; la versión base de TinySleepNet, 1,516,421. Las métricas del campeón son de las 16 personas de prueba (44,985 épocas); las de la versión base son las que ya figuraban en esta tabla, de otra evaluación, así que no se comparan directamente. Hardware de inferencia: CPU, sin GPU. <!-- PENDIENTE (Daniel): memoria en reposo y al predecir, medida en la instancia EC2 -->
+El campeón (un solo modelo para las 12 combinaciones de señales) tiene 1,558,165 parámetros; la versión base de TinySleepNet, 1,516,421. Las métricas del campeón son de las 16 personas de prueba (44,985 épocas); las de la versión base (v0.1.0) se obtuvieron con otra configuración de evaluación, así que no se comparan directamente. Hardware de inferencia: CPU, sin GPU. <!-- PENDIENTE (Daniel): memoria en reposo y al predecir, medida en la instancia EC2 -->
 
 ## 7. Dependencias y entorno
 
@@ -164,7 +164,7 @@ Los pasos 2 a 4 se pueden pedir en un solo comando. `--run` es `flexible`, `flex
 
 **Criterio del campeón** (se fija antes de mirar el test; el test solo reporta): el modelo flexible con mayor F1 macro medio en la validación cruzada sobre las 6 combinaciones comunes (las que no usan EMG), tomando el run más reciente de `flexible` y de `flexible_emg_mlp`. Solo esos dos pueden ser campeón; los controles y la ablación sin LSTM son comparaciones. `--campeon` imprime el ranking, se detiene si el run elegido no es el primero (salvo `--forzar`, que queda anotado en el run) y guarda el criterio en la etiqueta `criterio_campeon`. Si el campeón no es `flexible`, hay que cambiar `artifact_name` en el registro (y el código de la API, porque `flexible_emg_mlp` usa `TinySleepNetEMG` y recibe el EMG repetido 100 veces); el script avisa en ese caso. Sin `--cv-run-id`, `--final` conserva el comportamiento anterior (un run aparte que la API no usa).
 
-**Estado actual.** El campeón es `flexible_emg_mlp` (run `95951e2a2cfd4368970636cc6bdea9b5`, `champion=true` desde el 15 de noviembre); el run `flexible` ya no tiene la etiqueta. `configs/models/model_registry.yaml` busca ese run por la etiqueta y la API carga `TinySleepNetEMG` (cambios de Daniel en main, 13–15 de noviembre).
+**Estado actual.** El campeón es `flexible_emg_mlp` (run `95951e2a2cfd4368970636cc6bdea9b5`, `champion=true` desde el 15 de noviembre); el run `flexible` ya no tiene la etiqueta. `configs/models/model_registry.yaml` busca ese run por la etiqueta y la API carga `TinySleepNetEMG`.
 
 ### Reproducir los resultados del modelo flexible (artículo)
 
@@ -233,20 +233,20 @@ Cada script recalcula una parte del artículo desde los artefactos guardados (ML
 
 | Sección | Comando (desde la raíz) |
 |---|---|
-| G1 · Arquitectura y pesos | `python scripts/verificacion/verificar_g1_arquitectura.py` y `verificar_g1_pesos.py` |
-| G1 · Entrenamiento y comparación con los dedicados | `python scripts/verificacion/verificar_g1_entrenamiento.py` y `verificar_g1_comparacion.py --probs resultados_test` |
-| G2 · Hiperparámetros (Tabla 3) | `python scripts/verificacion/verificar_g2_hiperparametros.py` y `verificar_g2_tabla3.py` |
-| G3 · Validación cruzada (Tabla 4) | `python scripts/verificacion/verificar_g3.py` |
-| G4 y G5 · Prueba y ablación (Tablas 5, 5b, 5c y 6) | `python scripts/verificacion/verificar_g4_g5.py --probs resultados_test --mlflow` |
-| G6 · Matrices de confusión (Figura 6) | `python scripts/verificacion/figura6_matrices.py --probs resultados_test --salida reports/figures` |
-| G7 · Sobreajuste y variabilidad (Figura 7) | `python scripts/verificacion/figura7_sobreajuste.py --probs resultados_test --salida reports/figures` |
-| G8 · Umbrales (Figura 8) | `python scripts/verificacion/figura8_umbrales.py --probs resultados_test --val-probs res_emg/probs_validacion --salida reports/figures` |
-| G9 · EMG y clase M | `python scripts/verificacion/verificar_g9.py --probs resultados_test --emg-dir data/interim/epochs_emg_recortado` |
-| G1 · Párrafo de arquitectura frente al código y los pesos del campeón | `python scripts/verificacion/verificar_parrafo_arquitectura.py` |
-| G2 · Lote y longitud de secuencia de los 8 modelos | `python scripts/verificacion/verificar_lote_secuencia.py` |
-| G11 · Cómputo (Tabla 8) | `python scripts/verificacion/verificar_g11.py` |
-| Tablas del entregable: prueba por combinación, validación cruzada, comparaciones, confianza, F1 por persona y entrenamiento | `python scripts/verificacion/tabla1_test_por_combinacion.py --probs resultados_test` (igual `tabla3`, `tabla4` y `tabla5`); `tabla2_validacion_cruzada.py` y `tabla6_entrenamiento.py` leen MLflow |
-| Figuras de `reports/figures/aprendizaje_profundo/` (01 a 06) | `python scripts/verificacion/figuras_pedido7.py --probs resultados_test --val-probs res_emg/probs_validacion` |
+| Arquitectura y pesos del campeón | `python scripts/verificacion/verificar_arquitectura.py` y `verificar_pesos.py` |
+| Entrenamiento con todas las combinaciones y comparación con los dedicados | `python scripts/verificacion/verificar_entrenamiento.py` y `verificar_flexible_vs_dedicados.py --probs resultados_test` |
+| Hiperparámetros | `python scripts/verificacion/verificar_hiperparametros.py` y `verificar_tabla_hiperparametros.py` |
+| Validación cruzada | `python scripts/verificacion/verificar_validacion_cruzada.py` |
+| Prueba por combinación, comparación con los dedicados y ablación sin LSTM | `python scripts/verificacion/verificar_prueba_y_ablacion.py --probs resultados_test --mlflow` |
+| Matrices de confusión del campeón | `python scripts/verificacion/figura_matrices_confusion.py --probs resultados_test --salida reports/figures` |
+| Curvas de entrenamiento (sobreajuste) y variabilidad entre personas | `python scripts/verificacion/figura_sobreajuste.py --probs resultados_test --salida reports/figures` |
+| Umbrales de confianza por estadio | `python scripts/verificacion/figura_umbrales.py --probs resultados_test --val-probs res_emg/probs_validacion --salida reports/figures` |
+| EMG y clase M | `python scripts/verificacion/verificar_emg_y_clase_m.py --probs resultados_test --emg-dir data/interim/epochs_emg_recortado` |
+| Descripción de la arquitectura frente al código y los pesos del campeón | `python scripts/verificacion/verificar_parrafo_arquitectura.py` |
+| Lote y longitud de secuencia de los 8 modelos | `python scripts/verificacion/verificar_lote_secuencia.py` |
+| Cómputo (parámetros y tiempos de entrenamiento) | `python scripts/verificacion/verificar_computo.py` |
+| Tablas de resultados: prueba por combinación, validación cruzada, comparaciones, confianza, F1 por persona y entrenamiento | `python scripts/verificacion/tabla_test_por_combinacion.py --probs resultados_test` (igual `tabla_comparaciones.py`, `tabla_confianza.py` y `tabla_por_persona.py`); `tabla_validacion_cruzada.py` y `tabla_entrenamiento.py` leen MLflow |
+| Figuras de `reports/figures/aprendizaje_profundo/` (01 a 06) | `python scripts/verificacion/generar_figuras_articulo.py --probs resultados_test --val-probs res_emg/probs_validacion` |
 
 Los que leen MLflow piden la URI, el usuario y la clave si no están en el entorno.
 

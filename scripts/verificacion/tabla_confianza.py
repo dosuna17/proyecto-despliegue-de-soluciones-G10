@@ -1,5 +1,5 @@
-"""Pedido 4 de María José: confianza en prueba. Por estadio, cobertura y exactitud de lo aceptado, y el % de épocas
-que se marcarían para revisión, con los umbrales ya fijados en la validación cruzada (G8). Modelo: EMG-MLP.
+"""Confianza en prueba. Por estadio, cobertura y exactitud de lo aceptado, y el % de épocas
+que se marcarían para revisión, con los umbrales ya fijados en la validación cruzada. Modelo: EMG-MLP.
 
 Umbrales por clase (δ = 5 puntos), por estadio PREDICHO: una época se acepta si su confianza (probabilidad máxima)
 llega al umbral de su estadio; si no, va a revisión. Cobertura de un estadio = aceptadas / predichas como ese estadio.
@@ -7,7 +7,7 @@ Umbral global (secundario): 0.55 para todas las épocas. Los umbrales se leen de
 validación) y se recalcula todo desde las predicciones. IC95 por bootstrap de personas (1,000, semilla 42), como el 08.
 
 Uso, desde la raíz del repositorio:
-    python scripts/verificacion/tabla4_confianza.py --probs resultados_test --salida reports/tables
+    python scripts/verificacion/tabla_confianza.py --probs resultados_test --salida reports/tables
 """
 import argparse
 import json
@@ -77,7 +77,7 @@ for c in NOM:
     P_.append(d["probs"]); Y_.append(d["y_true"]); S_.append(s)
 junto = evaluar(np.concatenate(P_), np.concatenate(Y_), np.concatenate(S_))
 
-md = [f"**Tabla 4a. Confianza por estadio en prueba** (EMG-MLP, run `{RUN}`; las 12 combinaciones juntas, 539,820 épocas; "
+md = [f"**Confianza por estadio en prueba** (EMG-MLP, run `{RUN}`; las 12 combinaciones juntas, 539,820 épocas; "
       f"umbrales por clase fijados en la validación cruzada con δ = 5 puntos; IC95 por persona)", "",
       "| Estadio predicho | Umbral | Meta | Validación: cobertura / exactitud | Prueba: cobertura [IC95] | Prueba: exactitud de lo aceptado [IC95] | ¿Cumple la meta? |",
       "|---|---|---|---|---|---|---|"]
@@ -98,7 +98,7 @@ md += [f"| Todas (umbrales por clase) | — | — | {bloque['validacion_global']
        f"{g['ex']:.3f} [{g['ex_ic'][0]:.3f}, {g['ex_ic'][1]:.3f}] | {'sí' if g['ex_ic'][0] >= 0.826 else 'solo en el valor puntual' if g['ex'] >= 0.826 else 'no'} |",
        "", f"Épocas para revisión: **{100 * (1 - t['cob']):.1f} %** con los umbrales por clase y **{100 * (1 - g['cob']):.1f} %** con el umbral global "
        f"(sin umbral, la exactitud de todas las épocas es {junto['sin_umbral']:.3f}).", "",
-       "**Tabla 4b. Por combinación** (mismos umbrales aplicados a cada combinación sola)", "",
+       "**Confianza por combinación** (mismos umbrales aplicados a cada combinación sola)", "",
        "| Combinación | Revisión, umbrales por clase | Exactitud de lo aceptado | Revisión, umbral global | Exactitud de lo aceptado | Exactitud sin umbral |",
        "|---|---|---|---|---|---|"]
 for c, n in NOM.items():
@@ -107,11 +107,11 @@ for c, n in NOM.items():
               f"{r['global']['ex']:.3f} | {r['sin_umbral']:.3f} |")
     csv.append(";".join(["4b", n, "", "", "", "", f"{r['total']['cob']:.4f}", "", "", f"{r['total']['ex']:.4f}", "", "",
                          f"{100 * (1 - r['total']['cob']):.2f}"]))
-(sal / "tabla4_confianza.md").write_text("\n".join(md) + "\n", encoding="utf-8")
-(sal / "tabla4_confianza.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
+(sal / "tabla_confianza.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+(sal / "tabla_confianza.csv").write_text("\n".join(csv) + "\n", encoding="utf-8")
 print("\n".join(md))
 
-# ---- comprobaciones contra G8 y contra lo que guardó el 08 ----
+# ---- comprobaciones contra figura_umbrales.py y contra lo que guardó el 08 ----
 fallos = 0
 def check(a, o, ok):
     global fallos
@@ -124,7 +124,7 @@ check("Las 12 combinaciones juntas: cobertura y exactitud por estadio (con IC) i
       {c: f3(junto[c]["cob"], junto[c]["ex"], *junto[c]["ex_ic"]) for c in CLASES},
       all(f3(junto[c]["cob"], junto[c]["ex"], *junto[c]["ex_ic"]) == f3(jt["clases"][c]["cobertura"], jt["clases"][c]["exactitud_aceptadas"],
                                                                          *jt["clases"][c]["exactitud_ic95"]) for c in CLASES))
-check("Revisión: 11.9 % con los umbrales por clase y 9.2 % con el umbral global (G8)",
+check("Revisión: 11.9 % con los umbrales por clase y 9.2 % con el umbral global (figura_umbrales.py)",
       f"{100 * (1 - t['cob']):.1f} % y {100 * (1 - g['cob']):.1f} %",
       (f"{100 * (1 - t['cob']):.1f}", f"{100 * (1 - g['cob']):.1f}") == ("11.9", "9.2"))
 dif = [c for c in NOM if f3(por_comb[c]["total"]["cob"], por_comb[c]["total"]["ex"]) !=

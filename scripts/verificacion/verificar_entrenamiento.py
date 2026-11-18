@@ -1,8 +1,8 @@
 """Verifica, con el código, los datos y los resultados guardados en MLflow, el párrafo "Entrenamiento con
-todas las combinaciones" de G1.
+todas las combinaciones" del artículo.
 
 Uso (desde la raíz del repositorio, con el entorno donde están torch y mlflow):
-    python scripts/verificacion/verificar_g1_entrenamiento.py
+    python scripts/verificacion/verificar_entrenamiento.py
     (pide el URI, el usuario y la clave de MLflow si no están en el entorno)
 
 No entrena ni modifica nada. Descarga solo JSON y CSV pequeños de los 8 runs (no los pesos).
@@ -121,7 +121,7 @@ if not os.environ.get("MLFLOW_TRACKING_URI"):
         os.environ["MLFLOW_TRACKING_USERNAME"] = u
         os.environ["MLFLOW_TRACKING_PASSWORD"] = getpass.getpass("MLFLOW_TRACKING_PASSWORD: ")
 mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
-tmp = Path(tempfile.mkdtemp(prefix="verif_g1_"))
+tmp = Path(tempfile.mkdtemp(prefix="verif_entrenamiento_"))
 res, fin, pliegues = {}, {}, {}
 for m, rid in RUNS.items():
     d = Path(mlflow.artifacts.download_artifacts(run_id=rid, artifact_path="resultados", dst_path=str(tmp / m)))

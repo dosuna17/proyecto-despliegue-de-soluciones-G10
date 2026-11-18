@@ -1,8 +1,8 @@
-"""Comprueba, fila por fila, que la columna "Nuestro modelo final (EMG-MLP)" de la Tabla 3 (G2) es lo que
+"""Comprueba, fila por fila, que la columna "Nuestro modelo final (EMG-MLP)" de la tabla de hiperparámetros del artículo es lo que
 de verdad usa el código y lo que quedó guardado del modelo campeón.
 
 Uso, desde la raíz del repositorio (entorno con torch y mlflow):
-    python scripts/verificacion/verificar_g2_tabla3.py
+    python scripts/verificacion/verificar_tabla_hiperparametros.py
     (pide el URI, el usuario y la clave de MLflow si no están en el entorno)
 
 No entrena ni modifica nada. Lee el código, el JSON del modelo final y los pliegues del run campeón en MLflow,
@@ -50,7 +50,7 @@ if not os.environ.get("MLFLOW_TRACKING_URI"):
         os.environ["MLFLOW_TRACKING_USERNAME"] = u
         os.environ["MLFLOW_TRACKING_PASSWORD"] = getpass.getpass("MLFLOW_TRACKING_PASSWORD: ")
 mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
-tmp = tempfile.mkdtemp(prefix="g2_")
+tmp = tempfile.mkdtemp(prefix="hiperparametros_")
 info = json.load(open(mlflow.artifacts.download_artifacts(run_id=args.run_id,
                       artifact_path="modelo_final/flexible_emg_mlp_final.json", dst_path=tmp), encoding="utf-8"))
 dres = Path(mlflow.artifacts.download_artifacts(run_id=args.run_id, artifact_path="resultados", dst_path=tmp))
@@ -177,4 +177,4 @@ check("Evaluación", "VC de 5 pliegues sobre 62 personas y prueba aparte con 16"
       f"{disj and set().union(*vals) == set(train)}; train y prueba sin cruce: {not set(train) & set(test)}",
       len(folds) == 5 and len(train) == 62 and len(test) == 16 and disj and set().union(*vals) == set(train) and not set(train) & set(test))
 
-print(f"\n{'Todas las filas de la Tabla 3 coinciden con el código y el modelo guardado.' if fallos == 0 else f'{fallos} fila(s) por revisar.'}")
+print(f"\n{'Todas las filas de la tabla de hiperparámetros coinciden con el código y el modelo guardado.' if fallos == 0 else f'{fallos} fila(s) por revisar.'}")
