@@ -29,6 +29,28 @@ Umbrales de confianza (objetivo: exactitud de las epocas aceptadas >= 82.6 %):
     La curva completa y el menor umbral segun el test se guardan solo como referencia descriptiva
     (su exactitud seria optimista porque se ajusta sobre los mismos datos).
 
+Umbrales POR CLASE (idea del profesor Mario; metas por clase tomadas de SleepFM, Thapa et al., Nat. Med. 2026):
+    Una epoca se acepta solo si su clase predicha c tiene confianza >= tau_c; si no, va a revision.
+    - Meta de la clase c:  meta_c = referencia_c - delta.  referencia_c es la SENSIBILIDAD por clase REAL
+      (fila normalizada de la matriz de confusion, Fig. 1d, SHHS) que reporta SleepFM. NO es la misma metrica
+      que la nuestra: nosotros pedimos la EXACTITUD de lo aceptado dentro de cada clase PREDICHA (precision).
+      La referencia se usa solo como orden de dificultad de las clases (N1 mucho mas dificil que REM), no como
+      un valor equivalente.
+    - tau_c = menor umbral (rejilla 0.00-0.99) cuya precision de las epocas aceptadas predichas como c, medida
+      en la VALIDACION (probabilidades de los 5 pliegues de la CV), llega a meta_c.
+    - delta = 0, 5 y 10 puntos se reportan SIEMPRE en validacion (cobertura y exactitud por clase) y se escribe
+      cual se usa (--delta, por defecto 5) ANTES del test. El test solo verifica el delta elegido.
+    - Clase INALCANZABLE (ningun umbral llega a su meta): tau_c = None y TODAS las epocas
+      predichas como esa clase van a revision (cobertura de la clase = 0). Queda marcada en el JSON y en la tabla.
+    - El umbral global de 82.6 % (acuerdo entre expertos) se mantiene como criterio secundario, sin cambios.
+    - En el test, los umbrales GLOBALES de cada modelo (por clase y el de 82.6 %) se verifican con TODAS sus
+      combinaciones juntas, igual que se calcularon en validacion: resultados_test.json -> modelos.<modelo>.
+      umbral_global_junto y filas GLOBAL de umbrales_clase.csv (es la cifra que verifica los umbrales del tablero).
+      Dentro de cada combinacion, el bloque 'global' son esos mismos umbrales aplicados a esa combinacion sola.
+    - Se reporta la exactitud REAL de lo aceptado por clase en validacion y en test (en N1 la meta queda ~51 %:
+      casi la mitad de lo aceptado puede estar mal; es lo que pide la meta y se muestra tal cual).
+    Para fijarlos y revisarlos sin tocar el test: --solo-umbrales (no carga modelos ni datos).
+
 Epocas evaluadas: cada noche completa se parte en bloques de 15 epocas sin traslape desde la epoca 0 y se
 descarta el resto del final. rec_idx y epoca_idx en cada .npz permiten alinear otros modelos con estas mismas epocas.
 
@@ -46,6 +68,9 @@ Uso:
     python scripts/08_evaluar_test.py --modelos modelos_finales --probs-validacion res_flexible res_emg ...
     python scripts/08_evaluar_test.py --modelos modelos_finales --modo test --confirmo-test-unico \\
         --probs-validacion res_flexible res_emg res_controles
+
+    python scripts/08_evaluar_test.py --modelos modelos_finales --solo-umbrales \\
+        --probs-validacion res_flexible res_emg res_controles          # umbrales por clase, solo validacion
 
 Carpetas de datos: SLEEP_NPZ_DIR (3 canales) y SLEEP_EMG_DIR (EMG, solo para los modelos con EMG).
 """
@@ -98,6 +123,19 @@ N_BOOTSTRAP = 1000
 SEMILLA_BOOTSTRAP = 42
 UMBRALES = np.round(np.arange(0.0, 1.0, 0.01), 2)
 N_PLIEGUES = 5
+# Umbrales por clase. Referencia: SleepFM (Thapa et al., Nat. Med. 2026), Fig. 1d, SHHS, matriz normalizada por FILA:
+# es SENSIBILIDAD (de las epocas realmente de la clase c, que fraccion se predice c). Nuestra meta es otra metrica:
+# PRECISION de lo aceptado en cada clase predicha. Se usa solo como referencia del orden de dificultad.
+REFERENCIA_SLEEPFM_SENSIBILIDAD = {"W": 0.875, "N1": 0.560, "N2": 0.808, "N3": 0.862, "REM": 0.937}
+DELTAS = (0.0, 0.05, 0.10)          # puntos que se restan a la referencia, todos reportados en validacion
+DELTA_POR_DEFECTO = 0.05
+JUSTIFICACION_DELTA_POR_DEFECTO = (
+    "delta = 5 puntos: el mayor de {0, 5, 10} con el que la exactitud global de lo aceptado (todas las clases "
+    "juntas) sigue >= 82.6 % en la validacion; se fija con la validacion antes del test y el test solo verifica.")
+REGLA_INALCANZABLE = ("Si ninguna confianza (0.00-0.99) alcanza la meta de una clase en validacion, esa clase queda "
+                      "'inalcanzable': umbral = None y TODAS las epocas predichas como esa clase van a revision.")
+NOTA_METRICA = ("La referencia de SleepFM es sensibilidad por clase real (fila); la meta de este modelo es la "
+                "exactitud (precision) de las epocas aceptadas por clase predicha. No son la misma metrica.")
 RUTA_CANDADO_POR_DEFECTO = os.environ.get("TEST_LOCK_PATH") or str(RAIZ / "TEST_YA_EJECUTADO.json")
 
 
@@ -248,7 +286,7 @@ def metricas_por_persona(y_true, y_pred, sujeto_de_epoca) -> Dict:
 
 def curva_cobertura(probs: np.ndarray, y_true: np.ndarray, objetivo: float = OBJETIVO_EXACTITUD) -> Dict:
     """Para cada umbral t: fraccion de epocas con confianza >= t y exactitud dentro de ellas."""
-    confianza, y_pred = probs.max(axis=1), probs.argmax(axis=1)
+    confianza, y_pred = probs.max(axis=1).astype(np.float64), probs.argmax(axis=1)
     acierto = (y_pred == y_true)
     filas = []
     for t in UMBRALES:
@@ -318,6 +356,124 @@ def umbrales_desde_validacion(dirs: Sequence[Path], modelo: str, combos: Sequenc
     return {"combinaciones": por_comb, "global": glob}
 
 
+# ---------------------------------------------------------------------
+# Umbrales por clase (fijados con la validacion)
+# ---------------------------------------------------------------------
+def _clave_delta(d: float) -> str:
+    return f"{d:.2f}"
+
+
+def curvas_por_clase(probs: np.ndarray, y_true: np.ndarray) -> Dict[str, Dict]:
+    """Por clase predicha c y para cada umbral de UMBRALES: n de epocas predichas c con confianza >= umbral y cuantas
+    aciertan (y_true == c). Independiente de delta: se calcula una vez."""
+    conf = probs.max(axis=1).astype(np.float64)
+    pred = probs.argmax(axis=1)
+    out = {}
+    for k, c in enumerate(CLASES):
+        m = pred == k
+        cf, ok = conf[m], (y_true[m] == k)
+        orden = np.argsort(cf, kind="stable")
+        cf_s, ok_s = cf[orden], ok[orden]
+        resto_ok = np.concatenate([np.cumsum(ok_s[::-1])[::-1], [0]])      # aciertos con confianza >= cf_s[i]
+        pos = np.searchsorted(cf_s, UMBRALES, side="left")
+        out[c] = {"n_predichas": int(m.sum()), "n_aceptadas": (len(cf_s) - pos).astype(np.int64),
+                  "n_aciertos": resto_ok[pos].astype(np.int64)}
+    return out
+
+
+def bloque_umbrales_clase(curvas: Dict[str, Dict], n_total: int, delta: float) -> Dict:
+    """Umbral por clase para un delta: menor umbral con precision >= referencia - delta."""
+    clases, acc_tot, ok_tot = {}, 0, 0
+    for c in CLASES:
+        cv = curvas[c]
+        meta = round(REFERENCIA_SLEEPFM_SENSIBILIDAD[c] - delta, 4)
+        n_acc, n_ok = cv["n_aceptadas"], cv["n_aciertos"]
+        valido = n_acc > 0                       # la exactitud solo existe si hay epocas aceptadas
+        prec = np.where(n_acc > 0, n_ok / np.maximum(n_acc, 1), 0.0)
+        cumple = np.flatnonzero(valido & (prec >= meta))
+        if len(cumple):
+            i = int(cumple[0])
+            tau = float(UMBRALES[i])
+            val = {"n_predichas": cv["n_predichas"], "n_aceptadas": int(n_acc[i]),
+                   "cobertura": float(n_acc[i] / cv["n_predichas"]), "exactitud_aceptadas": float(prec[i])}
+            acc_tot += int(n_acc[i]); ok_tot += int(n_ok[i])
+            clases[c] = {"referencia_sleepfm_sensibilidad": REFERENCIA_SLEEPFM_SENSIBILIDAD[c], "meta_exactitud": meta,
+                         "umbral": tau, "inalcanzable": False, "validacion": val}
+        else:
+            mejor = float(prec[valido].max()) if valido.any() else None     # la mas alta que se alcanza, aunque no llegue a la meta
+            clases[c] = {"referencia_sleepfm_sensibilidad": REFERENCIA_SLEEPFM_SENSIBILIDAD[c], "meta_exactitud": meta,
+                         "umbral": None, "inalcanzable": True,
+                         "mejor_exactitud_alcanzada": mejor,
+                         "validacion": {"n_predichas": cv["n_predichas"], "n_aceptadas": 0, "cobertura": 0.0,
+                                        "exactitud_aceptadas": None}}
+    return {"delta": delta, "clases": clases,
+            "validacion_global": {"cobertura": acc_tot / n_total,
+                                  "exactitud_aceptadas": (ok_tot / acc_tot) if acc_tot else None,
+                                  "n_aceptadas": acc_tot, "n_epocas_validacion": int(n_total)}}
+
+
+def bloques_por_delta(probs: np.ndarray, y_true: np.ndarray) -> Dict[str, Dict]:
+    curvas = curvas_por_clase(probs, y_true)
+    return {_clave_delta(d): bloque_umbrales_clase(curvas, len(y_true), d) for d in DELTAS}
+
+
+def umbrales_clase_desde_validacion(dirs: Sequence[Path], modelo: str, combos: Sequence[str],
+                                    exigir_pliegues: bool) -> Dict:
+    """Umbrales por clase (todos los delta) por combinacion y globales del modelo (con todas sus combinaciones juntas)."""
+    por_comb, pool_p, pool_y = {}, [], []
+    for c in combos:
+        carga = cargar_probs_validacion(dirs, modelo, c, exigir_pliegues)
+        if carga is None:
+            por_comb[c] = None
+            continue
+        p, y, _ = carga
+        pool_p.append(p)
+        pool_y.append(y)
+        por_comb[c] = bloques_por_delta(p, y)
+    glob = None
+    if pool_p and len(pool_p) == len(combos):
+        glob = bloques_por_delta(np.concatenate(pool_p), np.concatenate(pool_y))
+    return {"combinaciones": por_comb, "global": glob}
+
+
+def evaluar_umbrales_clase(pred: Dict[str, np.ndarray], sujeto_de_rec: np.ndarray, taus: Dict[str, Optional[float]],
+                           n_boot: int = N_BOOTSTRAP, semilla: int = SEMILLA_BOOTSTRAP) -> Dict:
+    """Cobertura y exactitud de lo aceptado POR CLASE PREDICHA en test con umbrales YA FIJADOS (tau None = la clase
+    entera va a revision); IC95 por sujeto."""
+    probs, y_true = pred["probs"], pred["y_true"]
+    suj = sujeto_de_rec[pred["rec_idx"]]
+    conf, yp = probs.max(axis=1).astype(np.float64), probs.argmax(axis=1)
+    acierto = yp == y_true
+    sujetos = np.unique(suj)
+    n_tot = np.array([(suj == s).sum() for s in sujetos], dtype=float)
+    pred_c, acc_c, ok_c = [], [], []
+    for k, c in enumerate(CLASES):
+        es_c = yp == k
+        t = taus.get(c)
+        acepta = es_c & (conf >= t) if t is not None else np.zeros_like(es_c)
+        pred_c.append([(es_c & (suj == s)).sum() for s in sujetos])
+        acc_c.append([(acepta & (suj == s)).sum() for s in sujetos])
+        ok_c.append([(acepta & acierto & (suj == s)).sum() for s in sujetos])
+    pred_c, acc_c, ok_c = (np.array(a, dtype=float) for a in (pred_c, acc_c, ok_c))      # (clase, sujeto)
+    idx = np.random.default_rng(semilla).integers(0, len(sujetos), size=(n_boot, len(sujetos)))
+
+    def resumen(n_pred, n_acc, n_ok, n_all):
+        cob = n_acc.sum() / n_pred.sum() if n_pred.sum() > 0 else None
+        ex = n_ok.sum() / n_acc.sum() if n_acc.sum() > 0 else None
+        pb, ab, kb = n_pred[idx].sum(axis=1), n_acc[idx].sum(axis=1), n_ok[idx].sum(axis=1)
+        cob_b = np.where(pb > 0, ab / np.maximum(pb, 1), np.nan)
+        ex_b = np.where(ab > 0, kb / np.maximum(ab, 1), np.nan)
+        ic = lambda v: ([float(np.nanpercentile(v, 2.5)), float(np.nanpercentile(v, 97.5))] if np.isfinite(v).any() else None)
+        return {"n_predichas": int(n_pred.sum()), "n_aceptadas": int(n_acc.sum()),
+                "cobertura": None if cob is None else float(cob), "cobertura_ic95": ic(cob_b),
+                "exactitud_aceptadas": None if ex is None else float(ex), "exactitud_ic95": ic(ex_b)}
+
+    clases = {c: {"umbral": taus.get(c), **resumen(pred_c[k], acc_c[k], ok_c[k], n_tot)} for k, c in enumerate(CLASES)}
+    glob = resumen(pred_c.sum(axis=0), acc_c.sum(axis=0), ok_c.sum(axis=0), n_tot)
+    glob["error_global"] = 1.0 - float(acierto.mean())
+    return {"clases": clases, "global": glob}
+
+
 def evaluar_umbral(pred: Dict[str, np.ndarray], sujeto_de_rec: np.ndarray, umbral: Optional[float],
                    n_boot: int = N_BOOTSTRAP, semilla: int = SEMILLA_BOOTSTRAP) -> Optional[Dict]:
     """Cobertura y exactitud de las aceptadas en test con un umbral YA FIJADO; IC95 por sujeto."""
@@ -326,7 +482,7 @@ def evaluar_umbral(pred: Dict[str, np.ndarray], sujeto_de_rec: np.ndarray, umbra
     probs, y_true = pred["probs"], pred["y_true"]
     suj = sujeto_de_rec[pred["rec_idx"]]
     acierto = probs.argmax(axis=1) == y_true
-    acepta = probs.max(axis=1) >= umbral
+    acepta = probs.max(axis=1).astype(np.float64) >= umbral
     sujetos = np.unique(suj)
     n_tot = np.array([(suj == s).sum() for s in sujetos], dtype=float)
     n_acc = np.array([(acepta & (suj == s)).sum() for s in sujetos], dtype=float)
@@ -348,8 +504,9 @@ def evaluar_umbral(pred: Dict[str, np.ndarray], sujeto_de_rec: np.ndarray, umbra
 
 
 def evaluar_combinacion(pred: Dict[str, np.ndarray], sujeto_de_rec: np.ndarray,
-                        umbrales_val: Optional[Dict] = None) -> Dict:
-    """umbrales_val: {"combinacion": {...}|None, "global": {...}|None} (ya fijados con la validacion)."""
+                        umbrales_val: Optional[Dict] = None, umbrales_clase: Optional[Dict] = None) -> Dict:
+    """umbrales_val: {"combinacion": {...}|None, "global": {...}|None} (ya fijados con la validacion).
+    umbrales_clase: {"combinacion": bloque|None, "global": bloque|None}: bloque del delta elegido (ver bloque_umbrales_clase)."""
     y_true, probs = pred["y_true"], pred["probs"]
     y_pred = probs.argmax(axis=1)
     suj_epoca = sujeto_de_rec[pred["rec_idx"]]
@@ -367,6 +524,13 @@ def evaluar_combinacion(pred: Dict[str, np.ndarray], sujeto_de_rec: np.ndarray,
         metricas["umbral_validado"][tipo] = (
             {"validacion": fijado["validacion"], "test": evaluar_umbral(pred, sujeto_de_rec, t)} if fijado and t is not None
             else None)
+    metricas["umbral_por_clase"] = {}
+    for tipo in ("combinacion", "global"):
+        b = (umbrales_clase or {}).get(tipo)
+        metricas["umbral_por_clase"][tipo] = (
+            {"delta": b["delta"], "validacion": b,
+             "test": evaluar_umbrales_clase(pred, sujeto_de_rec, {c: v["umbral"] for c, v in b["clases"].items()})}
+            if b else None)
     return metricas
 
 
@@ -464,6 +628,114 @@ def figura_por_persona(modelo: str, resultados: Dict[str, Dict], ruta: Path, eti
 # ---------------------------------------------------------------------
 # Programa principal
 # ---------------------------------------------------------------------
+
+def config_clases(args) -> Dict:
+    return {"delta_elegido": args.delta, "justificacion_delta": args.justificacion_delta, "deltas_reportados": list(DELTAS),
+            "referencia_sleepfm_sensibilidad": REFERENCIA_SLEEPFM_SENSIBILIDAD, "nota_metrica": NOTA_METRICA,
+            "regla_clase_inalcanzable": REGLA_INALCANZABLE,
+            "objetivo_global_secundario": OBJETIVO_EXACTITUD}
+
+
+def verificar_global_junto(preds: Sequence[Dict[str, np.ndarray]], sujeto_de_rec: np.ndarray,
+                           umb: Optional[Dict], delta: float) -> Optional[Dict]:
+    """Verifica en test los umbrales GLOBALES del modelo (por clase y el de 82.6 %) con todas sus combinaciones
+    juntas, igual que se calcularon en validacion. IC95 por sujeto: las epocas de un sujeto de todas las combinaciones
+    cuentan juntas en el remuestreo."""
+    if not umb or not umb.get("por_clase") or not umb["por_clase"]["global"] or not preds:
+        return None
+    pool = {k: np.concatenate([p[k] for p in preds]) for k in ("probs", "y_true", "rec_idx")}
+    b = _bloque_elegido(umb["por_clase"]["global"], delta)
+    g = umb.get("global")
+    return {"nota": "todas las combinaciones del modelo juntas (igual que en validacion)",
+            "n_combinaciones": len(preds), "n_epocas": int(len(pool["y_true"])),
+            "por_clase": {"delta": b["delta"], "validacion": b,
+                          "test": evaluar_umbrales_clase(pool, sujeto_de_rec, {c: v["umbral"] for c, v in b["clases"].items()})},
+            "umbral_global_82_6": ({"validacion": g["validacion"], "test": evaluar_umbral(pool, sujeto_de_rec, g["umbral"])}
+                                   if g and g["umbral"] is not None else None)}
+
+
+def _imprimir_global_junto(modelo: str, junto: Dict) -> None:
+    t = junto["por_clase"]["test"]
+    partes = []
+    for c in CLASES:
+        x = t["clases"][c]
+        partes.append(f"{c} umbral {fmt(x['umbral'], 2) or 'None'} cob {fmt(x['cobertura'], 2) or '-'} exac {fmt(x['exactitud_aceptadas']) or '-'}")
+    g = t["global"]
+    print(f"  [{modelo}] verificacion global (todas las combinaciones juntas, {junto['n_epocas']} epocas): "
+          + " | ".join(partes) + f" | global cob {fmt(g['cobertura'])} exac {fmt(g['exactitud_aceptadas'])}")
+
+
+def _bloque_elegido(por_delta: Optional[Dict], delta: float) -> Optional[Dict]:
+    return None if not por_delta else por_delta[_clave_delta(delta)]
+
+
+def _imprimir_clases(modelo: str, glob: Optional[Dict[str, Dict]], delta: float, todos: bool = False) -> None:
+    if not glob:
+        print(f"  umbrales por clase {modelo}: sin probabilidades de validacion")
+        return
+    for d in (DELTAS if todos else (delta,)):
+        b = glob[_clave_delta(d)]
+        partes = []
+        for c in CLASES:
+            x = b["clases"][c]
+            partes.append(f"{c} {'INALCANZABLE' if x['inalcanzable'] else format(x['umbral'], '.2f')}"
+                          + ("" if x["inalcanzable"] else f" (cob {x['validacion']['cobertura']:.2f}, exac {x['validacion']['exactitud_aceptadas']:.3f})"))
+        g = b["validacion_global"]
+        print(f"  por clase {modelo:36s} delta {d:.2f} meta {[round(REFERENCIA_SLEEPFM_SENSIBILIDAD[c] - d, 3) for c in CLASES]}\n"
+              f"      " + " | ".join(partes) + f"\n      global: cobertura {g['cobertura']:.3f}, exactitud aceptadas "
+              + ("-" if g["exactitud_aceptadas"] is None else f"{g['exactitud_aceptadas']:.3f}"))
+
+
+def _filas_clases_csv(f, modelo: str, combo: str, por_delta: Dict[str, Dict], delta_elegido: float, test: Optional[Dict]) -> None:
+    for kd, b in por_delta.items():
+        for c in CLASES:
+            x, v = b["clases"][c], b["clases"][c]["validacion"]
+            t = (test or {}).get(c) if abs(float(kd) - delta_elegido) < 1e-9 and test else None
+            f.write(f"{modelo},{combo},{kd},{'si' if abs(float(kd) - delta_elegido) < 1e-9 else 'no'},{c},"
+                    f"{fmt(x['referencia_sleepfm_sensibilidad'])},{fmt(x['meta_exactitud'])},{fmt(x['umbral'], 2)},"
+                    f"{'si' if x['inalcanzable'] else 'no'},{v['n_predichas']},{v['n_aceptadas']},{fmt(v['cobertura'])},"
+                    f"{fmt(v['exactitud_aceptadas'])},"
+                    + (f"{t['n_predichas']},{t['n_aceptadas']},{fmt(t['cobertura'])},{fmt(t['exactitud_aceptadas'])},"
+                       f"{fmt(t['exactitud_ic95'] and t['exactitud_ic95'][0])},{fmt(t['exactitud_ic95'] and t['exactitud_ic95'][1])}\n"
+                       if t else ",,,,,\n"))
+
+
+ENCABEZADO_CLASES_CSV = ("modelo,combinacion,delta,delta_elegido,clase,referencia_sleepfm_sensibilidad,meta_exactitud,umbral,"
+                         "inalcanzable,val_n_predichas,val_n_aceptadas,val_cobertura,val_exactitud_aceptadas,"
+                         "test_n_predichas,test_n_aceptadas,test_cobertura,test_exactitud_aceptadas,"
+                         "test_exactitud_ic95_bajo,test_exactitud_ic95_alto\n")
+
+
+def solo_umbrales(carpeta: Path, dirs_val: Sequence[Path], salida: Path, args) -> Dict:
+    """Umbrales (global y por clase, delta 0/5/10) con la validacion, sin modelos ni datos. Escribe el JSON y el CSV
+    que se revisan y se dejan escritos ANTES de correr el test."""
+    salida.mkdir(parents=True, exist_ok=True)
+    out = {"fecha_utc": datetime.now(timezone.utc).isoformat(), "configuracion": config_clases(args), "modelos": {}}
+    for m in MODELOS:
+        ruta = carpeta / f"{m}_final.json"
+        if not ruta.exists():
+            raise SystemExit(f"Falta {ruta.name} en {carpeta} (se usa solo para saber las combinaciones del modelo).")
+        combos = json.load(open(ruta, encoding="utf-8"))["combinaciones"]
+        u = umbrales_desde_validacion(dirs_val, m, combos, exigir_pliegues=True)
+        u["por_clase"] = umbrales_clase_desde_validacion(dirs_val, m, combos, exigir_pliegues=True)
+        out["modelos"][m] = u
+        g = u["global"]
+        print(f"\n{m}: umbral global 82.6 %: " + (f"{g['umbral']}" if g and g["umbral"] is not None else "no alcanza el objetivo"))
+        _imprimir_clases(m, u["por_clase"]["global"], args.delta, todos=True)
+    escribir_json(salida / "umbrales_validacion.json", out)
+    with open(salida / "umbrales_clase_validacion.csv", "w", encoding="utf-8-sig") as f:
+        f.write(ENCABEZADO_CLASES_CSV)
+        for m, u in out["modelos"].items():
+            if u["por_clase"]["global"]:
+                _filas_clases_csv(f, m, "GLOBAL", u["por_clase"]["global"], args.delta, None)
+            for c, por_delta in u["por_clase"]["combinaciones"].items():
+                if por_delta:
+                    _filas_clases_csv(f, m, c, por_delta, args.delta, None)
+    print(f"\nDelta elegido: {args.delta:.2f}. {args.justificacion_delta}\nEscrito en {salida}/umbrales_validacion.json y umbrales_clase_validacion.csv "
+          f"(no se toco el test).")
+    return out
+
+
 def main(argv: Optional[Sequence[str]] = None) -> Dict:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--modelos", required=True, help="Carpeta con <run>_final.pth y <run>_final.json de los modelos.")
@@ -479,6 +751,14 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
     p.add_argument("--probs-validacion", nargs="+", default=None,
                    help="Carpetas con las probabilidades de validacion de la CV (probs_validacion/). Fijan los "
                         "umbrales de confianza sin usar el test. Obligatorio con --modo test.")
+    p.add_argument("--delta", type=float, default=DELTA_POR_DEFECTO, choices=list(DELTAS),
+                   help="Puntos que se restan a la referencia por clase para fijar la meta (0, 0.05 o 0.10). Se escribe en "
+                        "el candado antes del test; el test solo verifica este delta.")
+    p.add_argument("--justificacion-delta", default=JUSTIFICACION_DELTA_POR_DEFECTO,
+                   help="Texto que queda escrito (JSON y candado) con el delta elegido.")
+    p.add_argument("--solo-umbrales", action="store_true",
+                   help="Solo calcula y reporta los umbrales (global y por clase, delta 0/5/10) con la validacion y "
+                        "termina: no carga modelos ni datos y no toca el test. Necesita --probs-validacion.")
     p.add_argument("--solo", nargs="+", default=None, choices=MODELOS,
                    help="Solo en --modo prueba: evalua unicamente estos modelos.")
     p.add_argument("--salida", default=None, help="Por defecto resultados_test (test) o resultados_test_PRUEBA (prueba).")
@@ -494,6 +774,13 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
     carpeta = Path(args.modelos)
     dirs_val = [Path(d) for d in args.probs_validacion] if args.probs_validacion else []
     modelos_a_evaluar = list(MODELOS)
+
+    if args.solo_umbrales:
+        if args.modo == "test" or args.confirmo_test_unico or args.reanudar:
+            raise SystemExit("--solo-umbrales no se combina con --modo test, --confirmo-test-unico ni --reanudar.")
+        if not dirs_val:
+            raise SystemExit("--solo-umbrales necesita --probs-validacion.")
+        return solo_umbrales(carpeta, dirs_val, Path(args.salida or "umbrales_validacion"), args)
 
     # 1) comprobaciones que no tocan ningun dato
     if es_test:
@@ -532,8 +819,12 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
             print(f"  umbral de validacion {m:36s} global: "
                   + (f"{g['umbral']}" if g and g["umbral"] is not None else "no alcanza el objetivo"
                      if g else "sin probabilidades de validacion"))
+        for m, (_, info, _) in modelos.items():
+            umbrales[m]["por_clase"] = umbrales_clase_desde_validacion(dirs_val, m, info["combinaciones"],
+                                                                       exigir_pliegues=es_test)
+            _imprimir_clases(m, umbrales[m]["por_clase"]["global"], args.delta)
         if es_test:
-            sin = [m for m, u in umbrales.items() if u["global"] is None]
+            sin = [m for m, u in umbrales.items() if u["global"] is None or u["por_clase"]["global"] is None]
             if sin:
                 raise SystemExit(f"Faltan probabilidades de validacion de: {sin}")
     else:
@@ -559,6 +850,8 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
             previo = json.load(open(candado, encoding="utf-8"))
             if previo.get("md5_pesos") != pesos_md5:
                 raise SystemExit("Los pesos de los modelos cambiaron desde que empezo el test: no se puede reanudar.")
+            if previo.get("umbrales_por_clase_config") != json.loads(json.dumps(config_clases(args))):
+                raise SystemExit("El delta o la configuracion de umbrales por clase cambio desde que empezo el test: no se puede reanudar.")
             if previo.get("umbrales_fijados_en_validacion") != json.loads(json.dumps(umbrales)):
                 raise SystemExit("Los umbrales de validacion cambiaron desde que empezo el test: no se puede reanudar.")
             lock = previo
@@ -569,7 +862,8 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
                     "md5_pesos": pesos_md5, "salida": str(salida.resolve()),
                     "SLEEP_NPZ_DIR": os.environ.get("SLEEP_NPZ_DIR"), "SLEEP_EMG_DIR": os.environ.get("SLEEP_EMG_DIR"),
                     "probs_validacion": [str(d) for d in dirs_val], "argumentos": list(argv if argv is not None else sys.argv[1:]),
-                    "umbrales_fijados_en_validacion": json.loads(json.dumps(umbrales))}
+                    "umbrales_fijados_en_validacion": json.loads(json.dumps(umbrales)),
+                    "umbrales_por_clase_config": config_clases(args)}
         escribir_json(candado, lock)
         print(f"Candado del test ({lock['estado']}): {candado}")
 
@@ -592,12 +886,14 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
                                    "n_epocas_totales": n_totales, "n_epocas_evaluadas": n_esperadas,
                                    "bootstrap": {"n": N_BOOTSTRAP, "semilla": SEMILLA_BOOTSTRAP, "unidad": "sujeto"},
                                    "objetivo_exactitud": OBJETIVO_EXACTITUD,
-                                   "umbrales": "fijados con las probabilidades de validacion de la CV"},
+                                   "umbrales": "fijados con las probabilidades de validacion de la CV",
+                                   "umbrales_por_clase": config_clases(args)},
                      "modelos": {}}
     for nombre, (modelo, info, posiciones) in modelos.items():
         recs = recsE if info.get("emg") else recs3
         combos = [combinacion_por_nombre(c, posiciones) for c in info["combinaciones"]]
         resultados: Dict[str, Dict] = {}
+        preds_modelo: List[Dict[str, np.ndarray]] = []
         t0 = time.time()
         for combo in combos:
             ruta_npz = salida / f"probs_{nombre}__{combo[0]}.npz"
@@ -611,20 +907,28 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
                 tmp = ruta_npz.with_name(ruta_npz.stem + ".tmp.npz")
                 np.savez_compressed(tmp, **pred)
                 tmp.replace(ruta_npz)
+            preds_modelo.append(pred)
             umb = umbrales.get(nombre)
             umb_c = {"combinacion": (umb["combinaciones"].get(combo[0]) if umb else None),
                      "global": (umb["global"] if umb else None)}
-            resultados[combo[0]] = evaluar_combinacion(pred, sujeto_de_rec, umb_c)
+            uc = umb["por_clase"] if umb else None
+            cl_c = {"combinacion": _bloque_elegido(uc and uc["combinaciones"].get(combo[0]), args.delta),
+                    "global": _bloque_elegido(uc and uc["global"], args.delta)}
+            resultados[combo[0]] = evaluar_combinacion(pred, sujeto_de_rec, umb_c, cl_c)
             r = resultados[combo[0]]
             pp = r["por_persona"]["resumen"]["macro_f1"]
             print(f"  {nombre:36s} {combo[0]:52s} F1 macro {r['macro_f1']:.4f} "
                   f"[{r['macro_f1_ic95'][0]:.3f}, {r['macro_f1_ic95'][1]:.3f}] | kappa {r['cohens_kappa']:.4f} "
                   f"| por persona {pp['media']:.3f} ± {pp['desviacion']:.3f}")
+        junto = verificar_global_junto(preds_modelo, sujeto_de_rec, umbrales.get(nombre), args.delta)
+        if junto:
+            _imprimir_global_junto(nombre, junto)
         resumen["modelos"][nombre] = {"n_epocas_entrenamiento": info["n_epocas"], "emg": info.get("emg"),
                                       "sin_lstm": bool(info.get("sin_lstm")),
                                       "noche_completa": info.get("noche_completa"),
                                       "epocas_cv": info.get("epocas_cv"),
                                       "umbrales_validacion": umbrales.get(nombre),
+                                      "umbral_global_junto": junto,
                                       "combinaciones": resultados}
         figura_matrices(nombre, resultados, figuras / f"test_matriz_confusion_{nombre}", etiqueta_fig)
         figura_cobertura(nombre, resultados, figuras / f"test_cobertura_{nombre}", etiqueta_fig)
@@ -653,6 +957,19 @@ def main(argv: Optional[Sequence[str]] = None) -> Dict:
                         + f"{fmt(uc and uc['umbral'], 2)},{fmt(uc and uc['cobertura'])},{fmt(uc and uc['exactitud_aceptadas'])},"
                         + f"{fmt(ug and ug['umbral'], 2)},{fmt(ug and ug['cobertura'])},{fmt(ug and ug['exactitud_aceptadas'])},"
                         + f"{r['n_epocas']}\n")
+    if umbrales:
+        with open(salida / "umbrales_clase.csv", "w", encoding="utf-8-sig") as f:
+            f.write(ENCABEZADO_CLASES_CSV)
+            for m, d in resumen["modelos"].items():
+                u = umbrales[m]["por_clase"]
+                if u["global"]:
+                    # GLOBAL = todas las combinaciones del modelo juntas (como en validacion)
+                    tg = ((d.get("umbral_global_junto") or {}).get("por_clase") or {}).get("test")
+                    _filas_clases_csv(f, m, "GLOBAL", u["global"], args.delta, tg and tg["clases"])
+                for c, por_delta in u["combinaciones"].items():
+                    if por_delta:
+                        tc = ((d["combinaciones"][c]["umbral_por_clase"] or {}).get("combinacion") or {}).get("test")
+                        _filas_clases_csv(f, m, c, por_delta, args.delta, tc and tc["clases"])
     with open(salida / "por_persona.csv", "w", encoding="utf-8-sig") as f:
         f.write("modelo,combinacion,sujeto,n_epocas,accuracy,macro_f1,clases_con_soporte\n")
         for m, d in resumen["modelos"].items():
