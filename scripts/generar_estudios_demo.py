@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import os
+import shutil
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -90,6 +92,8 @@ def main() -> None:
     parser.add_argument("--noche", type=int, default=1, choices=(1, 2))
     parser.add_argument("--margen-min", type=int, default=60, help="Vigilia conservada antes y después del sueño.")
     parser.add_argument("--incluir-emg", action="store_true", help="Guardar también el EMG submental.")
+    parser.add_argument("--formato", choices=("npz", "edf"), default="npz",
+                        help="npz recortado para carga rápida o EDF original completo.")
     args = parser.parse_args()
 
     config = cargar_config(entorno={})
@@ -111,6 +115,21 @@ def main() -> None:
             raise SystemExit(f"El sujeto {sujeto} es de entrenamiento: no sirve como demostración.")
         psg, hipno = buscar_archivos(args.datos, sujeto, args.noche)
         nombre = os.path.basename(psg).split("-")[0]
+        if args.formato == "edf":
+            sexo = "mujer" if int(fila["sex"]) == 1 else "hombre"
+            descripcion = (
+                f"{sexo.capitalize()} de {int(fila['age'])} años · noche {args.noche} · "
+                "persona no vista en el entrenamiento"
+            )
+            destino_psg = salida / os.path.basename(psg)
+            destino_hipno = salida / os.path.basename(hipno)
+            shutil.copy2(psg, destino_psg)
+            shutil.copy2(hipno, destino_hipno)
+            meta = {"nombre": nombre, "descripcion": descripcion, "edad": str(int(fila["age"])),
+                    "sexo": sexo, "noche": str(args.noche)}
+            (salida / f"{nombre}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"{destino_psg} + {destino_hipno} · EDF original completo")
+            continue
         registro = leer_edf(psg, alias, config["senales"]["frecuencia_hz"], config["senales"]["duracion_epoca_s"],
                             hipno, nombre=nombre)
         registro = recortar(registro, args.margen_min, config["senales"]["duracion_epoca_s"])

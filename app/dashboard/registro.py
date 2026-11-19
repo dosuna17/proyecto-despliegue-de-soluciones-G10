@@ -285,7 +285,19 @@ def listar_demos(carpeta: str | Path) -> List[Dict[str, str]]:
     if not carpeta.is_dir():
         return []
     demos = []
+    # EDF crudos tienen prioridad sobre la copia derivada .npz con el mismo nombre.
+    edf_ids = {p.name.removesuffix("-PSG.edf") for p in carpeta.glob("*-PSG.edf")}
+    for ruta in sorted(carpeta.glob("*-PSG.edf")):
+        nombre = ruta.name.removesuffix("-PSG.edf")
+        try:
+            meta = json.loads(ruta.with_name(f"{nombre}.json").read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            meta = {"nombre": nombre, "descripcion": "Registro EDF crudo de Sleep-EDFx"}
+        meta.update({"ruta": str(ruta), "formato": "edf"})
+        demos.append(meta)
     for ruta in sorted(carpeta.glob("*.npz")):
+        if ruta.stem in edf_ids:
+            continue
         try:
             with np.load(ruta, allow_pickle=False) as datos:
                 meta = json.loads(str(datos["metadatos"]))
@@ -296,8 +308,30 @@ def listar_demos(carpeta: str | Path) -> List[Dict[str, str]]:
     return demos
 
 
-def leer_demo(ruta: str | Path) -> Registro:
+def leer_demo(
+    ruta: str | Path,
+    alias: Dict[str, List[str]] | None = None,
+    frecuencia_objetivo: int = 100,
+    duracion_epoca_s: float = 30,
+) -> Registro:
     """Carga un estudio de demostración como ``Registro``."""
+
+    ruta = Path(ruta)
+    if ruta.suffix.lower() == ".edf":
+        if alias is None:
+            raise ValueError("Se requiere la configuración de canales para leer una demo EDF.")
+        sufijo = ruta.name.removesuffix("-PSG.edf")
+        hipnogramas = sorted(ruta.parent.glob(f"{sufijo[:-1]}*-Hypnogram.edf"))
+        if not hipnogramas:
+            raise ErrorRegistro(f"No se encontró el hipnograma EDF para {ruta.name}.")
+        registro = leer_edf(ruta, alias, frecuencia_objetivo, duracion_epoca_s, hipnogramas[0], nombre=sufijo)
+        registro.origen = "demo"
+        try:
+            meta = json.loads(ruta.with_name(f"{sufijo}.json").read_text(encoding="utf-8-sig"))
+            registro.metadatos = {k: str(v) for k, v in meta.items() if k in ("descripcion", "edad", "sexo", "noche")}
+        except (OSError, ValueError):
+            pass
+        return registro
 
     with np.load(ruta, allow_pickle=False) as datos:
         meta = json.loads(str(datos["metadatos"]))

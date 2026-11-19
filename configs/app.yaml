@@ -98,6 +98,6 @@ carga:
   min_epocas: 15
 
 estudios_demo:
-  # Carpeta con los estudios de demostración (.npz), relativa a la raíz
+  # Carpeta con estudios de demostración EDF crudos o NPZ, relativa a la raíz
   # del repositorio. Se generan con scripts/generar_estudios_demo.py.
   carpeta: app/dashboard/estudios_demo
