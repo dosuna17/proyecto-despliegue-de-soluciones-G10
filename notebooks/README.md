@@ -19,7 +19,7 @@ usan `Path.cwd().parent` como raíz del proyecto) con el entorno de
 | `09_preprocess_base_models_EMG.ipynb` | Igual que el 07, pero agrega EMG submental: genera `train_multicanal_emg.csv` y `test_multicanal_emg.csv` (12 combinaciones, 40 features). |
 | `10_train_base_models_multichannel.ipynb` | Igual que el 08, pero con los CSV del 09. Todos los artefactos y modelos de MLflow llevan el sufijo `emg`, para no sobrescribir los del 08. |
 | `11_yasa_validation.ipynb` | Valida el clasificador pre-entrenado de [YASA](https://yasa-sleep.org/) (`yasa.SleepStaging`) sobre el mismo set de test del 10 (44 985 épocas) y reporta sus métricas. 
-| `12_eog_features_validation.ipynb` | Valida las features de tiempo del EOG (`p2p_robust`, `hjorth_mobility`, `saccade_count`, `kurtosis`) solo con sujetos de train: calibra el umbral de sacadas (750 µV/s con 100 ms de suavizado, por AUC de REM frente a N1 + N2), compara las features por clase y revisa su redundancia con las espectrales. Guarda `reports/figures/modelos_clasicos/calibracion_umbral_sacadas_eog.pdf`. |
+| `12_eog_features_validation.ipynb` | Valida las features de tiempo del EOG (`p2p_robust`, `hjorth_mobility`, `saccade_count`, `kurtosis`) solo con sujetos de train: calibra el umbral de sacadas (750 µV/s con 100 ms de suavizado, por AUC de REM frente a N1 + N2), compara las features por clase y revisa su redundancia con las espectrales.
 
 ### Procesamiento común en el 07 y el 09
 
