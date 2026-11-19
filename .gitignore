@@ -45,3 +45,7 @@ confusion_matrix_avanzado.png
 generar_matriz_confusion.py
 
 .DS_Store
+
+# Grabaciones crudas de los estudios demo: se transfieren directamente a EC2
+app/dashboard/estudios_demo/*.edf
+app/dashboard/estudios_demo/*.EDF
