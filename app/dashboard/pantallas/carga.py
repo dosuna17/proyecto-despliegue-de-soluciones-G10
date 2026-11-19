@@ -17,8 +17,8 @@ CANALES_INTERFAZ = ("EEG Fpz-Cz", "EEG Pz-Oz", "EOG horizontal", "EMG submental"
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _leer_demo_cache(ruta: str) -> Registro:
-    return leer_demo(ruta)
+def _leer_demo_cache(ruta: str, alias: Dict[str, List[str]], frecuencia_hz: int, duracion_epoca_s: float) -> Registro:
+    return leer_demo(ruta, alias, frecuencia_hz, duracion_epoca_s)
 
 
 @st.cache_data(show_spinner=False, ttl=600)
@@ -85,7 +85,10 @@ def _cargar_demo(config: Dict[str, Any]) -> Registro | None:
         "entrenar el modelo, con el hipnograma de su experto para comparar."
     )
     with st.spinner("Cargando el estudio…"):
-        return _leer_demo_cache(ruta)
+        return _leer_demo_cache(
+            ruta, config["senales"]["alias"], config["senales"]["frecuencia_hz"],
+            config["senales"]["duracion_epoca_s"],
+        )
 
 
 def _resumen_registro(registro: Registro, config: Dict[str, Any]) -> None:
