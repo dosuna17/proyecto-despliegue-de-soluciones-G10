@@ -16,7 +16,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from procesamiento import ORDEN_HIPNOGRAMA, para_revisar
-from textos import NOMBRES_ESTADIO
+from textos import NOMBRES_ESTADIO, epocas
 
 COLORES = {
     "claro": {"W": "#2a78d6", "N1": "#eb6834", "N2": "#1baf7a", "N3": "#eda100", "REM": "#e87ba4",
@@ -268,7 +268,7 @@ def senal_con_estadios(
             showlegend=False,
         ))
         fig.add_annotation(
-            x=0, xref="paper", y=desplazamiento + separacion * 0.42, text=f"<b style='color:{color}'>━</b> {canal} (escala ±{escalas[k]:.0f} µV)",
+            x=0, xref="paper", y=desplazamiento + separacion * 0.42, text=f"<b style='color:{color}'>━</b> {canal} (escala ±{texto_escala(escalas[k])} µV)",
             showarrow=False, xanchor="left", font=dict(size=12, color=tinta["secundaria"]),
             bgcolor="rgba(255,255,255,0.75)" if tema == "claro" else "rgba(14,17,23,0.75)",
         )
@@ -302,6 +302,19 @@ def senal_con_estadios(
     return figura
 
 
+def texto_escala(amplitud_uv: float) -> str:
+    """Escala del visor con los decimales justos para que nunca se lea «±0».
+
+    Desde 1 µV se redondea a entero (±37); por debajo se muestran uno o dos
+    decimales (±0.4, ±0.05), como pasa con la envolvente de EMG en sueño profundo.
+    """
+    if amplitud_uv >= 1:
+        return f"{amplitud_uv:.0f}"
+    if amplitud_uv >= 0.1:
+        return f"{amplitud_uv:.1f}"
+    return f"{amplitud_uv:.2f}"
+
+
 def matriz_confusion(matriz: np.ndarray, clases: Sequence[str], tema: str) -> go.Figure:
     filas = matriz.sum(axis=1, keepdims=True)
     porcentaje = np.divide(matriz, filas, out=np.zeros_like(matriz, dtype=float), where=filas > 0) * 100
@@ -310,7 +323,7 @@ def matriz_confusion(matriz: np.ndarray, clases: Sequence[str], tema: str) -> go
         return "#ffffff" if oscuro_fondo else TINTA[tema]["primaria"]
 
     texto = [[f"<span style='color:{color_texto(porcentaje[i, j])}'><b>{porcentaje[i, j]:.0f} %</b>"
-              f"<br>{matriz[i, j]} épocas</span>"
+              f"<br>{epocas(matriz[i, j])}</span>"
               for j in range(len(clases))] for i in range(len(clases))]
     escala = [[0, "#cde2fb"], [0.5, "#5598e7"], [1, "#104281"]] if tema == "claro" else \
         [[0, "#1f2a38"], [0.5, "#256abf"], [1, "#86b6ef"]]

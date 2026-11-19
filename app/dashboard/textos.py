@@ -121,3 +121,12 @@ AYUDA = {
 ERROR_GENERICO = (
     "Ocurrió un problema inesperado. Intente de nuevo; si continúa, avise al equipo de soporte."
 )
+
+
+def epocas(n: int) -> str:
+    """Cantidad de épocas con el sustantivo en singular o plural y punto de miles.
+
+    ``epocas(1)`` → ``"1 época"``; ``epocas(1239)`` → ``"1.239 épocas"``.
+    """
+    n = int(n)
+    return f"{n:,}".replace(",", ".") + (" época" if n == 1 else " épocas")

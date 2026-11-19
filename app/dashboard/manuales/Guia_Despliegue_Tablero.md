@@ -8,21 +8,7 @@ comprobar que quedó bien.
 
 ## 1. Arquitectura
 
-```
- Usuario (navegador)
-        │  HTTP :8501  (único puerto público)
-        ▼
- ┌──────────────────────────┐         ┌──────────────────────────────┐
- │ dashboard (Streamlit)    │  HTTP   │ api (FastAPI + PyTorch)      │
- │ app/dashboard/Dockerfile │ ──────► │ Dockerfile (raíz)            │
- │ - lee EDF / estudios demo│ :8000   │ - /health  /models           │
- │ - arma bloques de 15     │ (red    │ - /predict-tinysleepnet      │
- │   épocas × 8 canales     │ interna)│                              │
- │ - recorte, indicadores,  │         └──────────────┬───────────────┘
- │   gráficas, CSV          │                        │ artefactos
- └──────────────────────────┘                        ▼
-                                              MLflow (EC2) / modelos/
-```
+![Arquitectura del despliegue: tablero y API en una instancia EC2](../../../reports/figures/arquitectura.png)
 
 - El **tablero** no tiene modelos, PyTorch ni el dataset. Lee la señal, la
   prepara, llama a la API y presenta el resultado.
@@ -285,7 +271,7 @@ Lista de verificación funcional:
       comparación.
 - [ ] Al desmarcar los dos EEG aparece el aviso y el botón queda deshabilitado.
 - [ ] Las seis combinaciones sin EMG funcionan.
-- [ ] El CSV se descarga y se abre en Excel.
+- [ ] El informe PDF y los datos por época en Excel se descargan y se abren.
 - [ ] Con la API detenida (`docker compose stop api`) el tablero muestra
       "No hay conexión…" y no una traza de Python.
 

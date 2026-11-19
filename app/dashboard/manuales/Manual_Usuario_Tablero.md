@@ -31,11 +31,19 @@ resultado.
 El uso tiene tres etapas, que se ven en la parte superior de la pantalla:
 **1 · Carga del registro → 2 · Clasificación → 3 · Resultados**.
 
+![Flujo de uso del tablero en tres etapas](capturas/flujo_tablero.png)
+
+*Figura 1. Las tres etapas del tablero. Desde los resultados, «Analizar otro
+registro» vuelve a la carga.*
+
 ---
 
 ## 2. Etapa 1: cargar el registro y elegir las señales
 
-<!-- CAPTURA: pantalla de carga con un estudio de demostración seleccionado -->
+![Pantalla de carga con un estudio de demostración que trae las cuatro señales](capturas/01_carga.png)
+
+*Figura 2. Carga con el estudio de demostración SC4241E0: las cuatro señales
+están disponibles y el tablero indica la combinación elegida (12 de 12).*
 
 ### 2.1 Elegir el registro
 
@@ -56,6 +64,12 @@ here*, *Browse files*): es el componente estándar de la herramienta con la que
 se construyó el tablero. Puede arrastrar el archivo al cuadro o pulsar
 *Browse files* para buscarlo.
 
+![Opción «Subir mi registro» con el archivo de señales y el hipnograma cargados](capturas/02_subir_edf.png)
+
+*Figura 3. Registro propio: archivo de señales (obligatorio) e hipnograma del
+experto (opcional). Debajo aparecen la duración, la hora de inicio y si hay
+hipnograma.*
+
 Al leer el archivo, el tablero muestra la duración del registro, la hora de
 inicio de la grabación y si hay hipnograma. Si alguna señal venía a una
 frecuencia distinta de 100 Hz, la ajusta y lo informa.
@@ -75,8 +89,14 @@ Debajo de cada casilla aparece su estado:
 
 - ✅ **Disponible**: la señal está en el archivo y el modelo la usa.
 - ⛔ **No está en el archivo**: el registro no la trae.
-- ⛔ **El modelo aún no la usa**: la señal existe, pero el modelo actual no fue
-  entrenado con ella. La casilla se habilita sola cuando el modelo la incorpore.
+- ⛔ **El modelo aún no la usa**: la señal existe, pero el modelo activo no fue
+  entrenado con ella. Con el modelo actual no aparece, porque usa las cuatro
+  señales.
+
+**Sobre el EMG.** El modelo se entrenó con el EMG tal como viene en Sleep-EDF:
+la envolvente del tono muscular, con un valor por segundo (1 Hz). Si el archivo
+trae el EMG a otra frecuencia (por ejemplo, la señal cruda a 100 Hz o más), el
+tablero no lo usa, lo informa con un aviso y continúa con las demás señales.
 
 **Regla:** se necesita **al menos una señal EEG** (Fpz-Cz o Pz-Oz). EOG y EMG
 son opcionales. Esto da 12 combinaciones posibles:
@@ -103,7 +123,9 @@ Pulse **Generar clasificación** para continuar.
 
 ## 3. Etapa 2: clasificación
 
-<!-- CAPTURA: pantalla "Estamos generando la clasificación" -->
+![Aviso «Estamos generando la clasificación» con la barra de avance](capturas/03_clasificando.png)
+
+*Figura 4. Clasificación en curso: lote 16 de 30 y tiempo restante.*
 
 Aparece el aviso **"Estamos generando la clasificación"** con una barra de
 avance y el tiempo estimado restante. Mientras tanto el tablero:
@@ -113,14 +135,19 @@ avance y el tiempo estimado restante. Mientras tanto el tablero:
 3. Calcula los indicadores.
 
 No cierre ni recargue la página. La duración depende del largo del registro;
-la barra muestra cuánto falta. Si el servicio no responde, el tablero lo indica
+la barra muestra cuánto falta. En la versión desplegada, una noche de Sleep
+Cassette (de 14 a 21 horas grabadas) tardó entre 20 y 40 segundos. Si el servicio no responde, el tablero lo indica
 con un mensaje y un botón para volver a intentarlo.
 
 ---
 
 ## 4. Etapa 3: resultados
 
-<!-- CAPTURA: pantalla de resultados completa -->
+![Pantalla de resultados: ficha, resumen del sueño, tiempo en cada estadio e hipnogramas](capturas/04a_resultados.png)
+
+*Figura 5. Resultados de SC4241E0 con las cuatro señales: ficha del análisis,
+resumen del sueño, tiempo en cada estadio e hipnograma del modelo y del
+experto.*
 
 ### 4.1 Ficha del análisis
 
@@ -140,6 +167,11 @@ misma clasificación:
 - si hay varias siestas, se toma el periodo con más sueño.
 
 Todos estos valores se pueden ajustar en la configuración.
+
+Las últimas épocas del registro pueden aparecer como «?»: el modelo clasifica
+secuencias de 15 épocas y las que no completan una secuencia quedan sin
+clasificar, igual que en la evaluación del modelo. Son vigilia del final de la
+grabación y no afectan los indicadores.
 
 ### 4.2 Resumen del sueño
 
@@ -186,7 +218,11 @@ horizontal:
 
 ### 4.4 Señal y clasificación por época
 
-<!-- CAPTURA: visor de señal con una época de baja confianza -->
+![Visor de señal en una época N1 de baja confianza, con la segunda opción del modelo](capturas/05_visor_baja_confianza.png)
+
+*Figura 6. Época 820 en la vista de 30 s: el modelo eligió N1 con 63 % de
+confianza (⚠, conviene revisarla) y su segunda opción fue N2 (36 %); el experto
+también marcó N1.*
 
 Muestra las señales registradas, **cada una con su propio color** y su nombre a
 la izquierda, sobre un fondo limpio. Encima de cada época hay una **franja con
@@ -202,6 +238,19 @@ estudio.
   para ver el contexto. En la vista de 5 minutos, la época seleccionada se
   resalta con un fondo gris suave.
 - La barra deslizante permite ir a cualquier momento del registro.
+
+**Escala de cada señal.** Las señales tienen amplitudes muy distintas: el EEG
+frontal puede superar los 50 µV y la envolvente del EMG rara vez pasa de unos
+pocos µV. Para que todas se vean, cada una se dibuja con su propia escala
+vertical, indicada junto a su nombre (por ejemplo, *escala ±37 µV*). Al pasar
+el cursor sobre la señal se ve su valor real en µV. El EMG tiene un valor por
+segundo, por eso se ve escalonado.
+
+![Vista de 5 minutos en la que el EMG aumenta al pasar de sueño a vigilia](capturas/06_visor_emg_5min.png)
+
+*Figura 7. Vista de 5 minutos: al pasar de N2 a vigilia (W) aumentan la
+actividad del EEG y del EOG y el tono muscular (EMG). Esta época está fuera de la
+ventana analizada, por eso no cuenta en los indicadores.*
 
 Debajo se muestra el detalle de la época seleccionada:
 
@@ -232,6 +281,20 @@ Solo aparece si hay hipnograma del experto.
 
 Las épocas que el experto marcó como movimiento o no puntuó se excluyen, porque
 el modelo no predice esas categorías.
+
+![Comparación con el experto: coincidencia, kappa y matriz de confusión](capturas/04b_resultados_comparacion.png)
+
+*Figura 8. Parte final de los resultados: visor de señal, comparación con el
+experto (coincidencia 83 %, kappa 0.76) y descargas.*
+
+Si no se cargó el hipnograma del experto, esta sección no aparece y el
+hipnograma muestra solo la clasificación del modelo. La ventana analizada y los
+indicadores se calculan igual.
+
+![Resultados de un registro subido sin hipnograma del experto](capturas/07_resultados_sin_hipnograma.png)
+
+*Figura 9. Registro SC4041E0 subido sin hipnograma: no hay comparación ni
+franja de coincidencias.*
 
 ### 4.6 Descargar resultados
 
@@ -278,6 +341,8 @@ Pulse **Analizar otro registro** para volver a la etapa 1.
 | *El archivo no contiene ninguna de las señales que el modelo reconoce* | Verifique que el EDF tenga un canal EEG Fpz-Cz o Pz-Oz. |
 | *Seleccione al menos una señal EEG* | Marque Fpz-Cz, Pz-Oz o ambas. |
 | *El registro dura menos de 7.5 minutos* | El modelo analiza secuencias de 15 épocas; use un registro más largo. |
+| *Se descartó el EMG submental porque viene a … Hz; el modelo requiere 1 Hz* | El archivo trae el EMG crudo u otra frecuencia. El análisis sigue con las demás señales; no hace falta hacer nada. |
+| *… venía a … Hz y se ajustó a 100 Hz* | El EEG o el EOG se remuestrearon a la frecuencia con la que se entrenó el modelo. Es informativo. |
 | *No hay conexión con el servicio de clasificación* | Espere unos minutos y pulse *Reintentar conexión*. |
 | *El modelo no está disponible en este momento* | El servicio está iniciando o sin acceso a los modelos; intente más tarde. |
 
@@ -293,6 +358,9 @@ Pulse **Analizar otro registro** para volver a la etapa 1.
   sea la correcta.
 - Los indicadores son estimaciones a partir de la clasificación automática y
   heredan sus errores.
+- El EMG solo se usa si viene como envolvente de 1 Hz, igual que en Sleep-EDF.
+  Los equipos que guardan el EMG crudo a alta frecuencia se analizan con EEG y
+  EOG.
 
 ---
 
@@ -313,6 +381,8 @@ Pulse **Analizar otro registro** para volver a la etapa 1.
 | Hipnograma del experto en panel aparte y franja de coincidencias | Superponer dos líneas en la misma gráfica no se distinguía; en paneles separados se comparan sin confundirse | Dónde coinciden modelo y experto, y dónde conviene revisar |
 | Hallazgos en texto, solo en el PDF y el Excel | Quien recibe el archivo no tiene la página delante; un resumen en palabras le hace comprensibles los números. En la página sería repetitivo | Lo más importante del estudio en pocas líneas |
 | Tiempo en cada estadio, en recuadros compactos | Es un dato estándar de los informes de polisomnografía; en recuadros ocupa poco espacio | Cómo se repartió la noche entre los estadios |
+| Flujo en tres etapas | Separar cargar, esperar y revisar evita que el usuario cambie la selección mientras el modelo trabaja y deja claro en qué paso está | Qué tiene que hacer ahora y qué viene después |
+| Escala propia por señal | Con una escala común, el EMG (unos pocos µV) se veía plano junto al EEG; con su propia escala se ven todas y el valor real sigue disponible al pasar el cursor | La forma de cada señal en la época, incluido el tono muscular |
 | Visor de señal: un color por señal, fondo limpio y franja de estadio encima | Así se califica el sueño: mirando la señal época por época. Los colores distinguen las señales sin confundirse con los estadios | Por qué el modelo eligió cada estadio y si conviene corregirlo |
 | Segunda opción del modelo | La confianza sola no dice entre qué estadios dudó el modelo; una gráfica de 5 probabilidades ocupaba espacio sin aportar más | Qué mirar en la señal para decidir entre los dos estadios |
 | Kappa y referencia entre expertos | La exactitud sola se infla por la vigilia y N2, que son los estadios más frecuentes; el kappa corrige el azar y la referencia humana da contexto | Si el acuerdo con el experto es comparable al de dos expertos entre sí |
