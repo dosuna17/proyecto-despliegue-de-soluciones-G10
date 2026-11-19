@@ -68,7 +68,7 @@ def _ficha(config, registro, seleccion, modelo, ventana, indicadores, n_total) -
                 f"{hora_epoca(registro.inicio, ventana.fin, duracion_epoca)} "
                 f"({minutos_a_texto(indicadores.minutos_analizados)} de "
                 f"{minutos_a_texto(n_total * duracion_epoca / 60)} grabados). "
-                f"Se dejaron fuera {fuera:,} épocas de vigilia antes y después del sueño.".replace(",", "."),
+                f"Se dejaron fuera {textos.epocas(fuera)} de vigilia antes y después del sueño.".replace(",", "."),
                 help=textos.AYUDA["ventana"],
             )
         elif ventana.metodo == "sin_sueno":
@@ -228,7 +228,8 @@ def _concordancia(config, concordancia) -> None:
     c3.metric("Épocas comparadas", f"{concordancia.epocas_comparadas:,}".replace(",", "."))
     if concordancia.epocas_excluidas:
         st.caption(
-            f"Se excluyeron {concordancia.epocas_excluidas} épocas que el experto marcó como movimiento "
+            f"{'Se excluyó' if concordancia.epocas_excluidas == 1 else 'Se excluyeron'} "
+            f"{textos.epocas(concordancia.epocas_excluidas)} que el experto marcó como movimiento "
             "o no puntuó, porque el modelo no predice esas categorías."
         )
     st.caption(textos.AYUDA["matriz"])

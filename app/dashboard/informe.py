@@ -168,9 +168,10 @@ def hallazgos(d: DatosInforme) -> List[str]:
         valores, cuentas = np.unique(estadios_baja, return_counts=True)
         mas = valores[int(np.argmax(cuentas))]
         parrafos.append(
-            f"{int(baja.sum())} épocas ({_pct(baja.mean())} de las analizadas) tienen una confianza menor al "
+            f"{textos.epocas(baja.sum())} ({_pct(baja.mean())} de las analizadas) "
+            f"{'tiene' if int(baja.sum()) == 1 else 'tienen'} una confianza menor al "
             f"umbral de su estadio ({d.umbrales_texto}) y conviene revisarlas; la mayoría fueron clasificadas como "
-            f"{_nombre(mas)}: {int(cuentas.max())} épocas. Están en la lista de épocas para revisar."
+            f"{_nombre(mas)}: {textos.epocas(cuentas.max())}. Están en la lista de épocas para revisar."
         )
     else:
         parrafos.append(f"Ninguna época analizada quedó por debajo del umbral de su estadio ({d.umbrales_texto}).")
@@ -185,14 +186,14 @@ def hallazgos(d: DatosInforme) -> List[str]:
         else:
             relacion = "por debajo del"
         texto = (f"Frente al hipnograma del experto, el modelo coincidió en el {_pct(c.exactitud)} de "
-                 f"{c.epocas_comparadas} épocas (kappa de Cohen {c.kappa:.2f}, {relacion} acuerdo típico entre "
+                 f"{textos.epocas(c.epocas_comparadas)} (kappa de Cohen {c.kappa:.2f}, {relacion} acuerdo típico entre "
                  f"dos expertos humanos, {d.kappa_referencia:.2f}).")
         fuera = c.matriz.copy()
         np.fill_diagonal(fuera, 0)
         if fuera.sum():
             i, j = np.unravel_index(int(np.argmax(fuera)), fuera.shape)
             texto += (f" La diferencia más frecuente: el experto marcó {c.clases[i]} y el modelo {c.clases[j]} "
-                      f"({int(fuera[i, j])} épocas).")
+                      f"({textos.epocas(fuera[i, j])}).")
         parrafos.append(texto)
 
     parrafos.append("Estos resultados son una estimación automática y deben ser revisados por un profesional del sueño.")
@@ -498,7 +499,8 @@ def _pagina_hipnograma(f, d: DatosInforme, plt) -> None:
         f.text(0.36, y, valor, fontsize=8.5, color=TINTA)
         y -= 0.0165
     if c.epocas_excluidas:
-        f.text(0.06, y, f"Se excluyeron {c.epocas_excluidas} épocas que el experto no puntuó o marcó como movimiento.",
+        f.text(0.06, y, f"{'Se excluyó' if c.epocas_excluidas == 1 else 'Se excluyeron'} {textos.epocas(c.epocas_excluidas)} "
+               "que el experto no puntuó o marcó como movimiento.",
                fontsize=7.6, color=TINTA_SECUNDARIA)
         y -= 0.016
     # Matriz grande: ocupa la mitad izquierda de la página hasta el pie, para que se lean los números.
@@ -509,7 +511,7 @@ def _pagina_hipnograma(f, d: DatosInforme, plt) -> None:
     eje.imshow(porcentaje, cmap="Blues", vmin=0, vmax=1, aspect="auto")
     for i in range(len(c.clases)):
         for j in range(len(c.clases)):
-            eje.text(j, i, f"{_pct(porcentaje[i, j])}\n{c.matriz[i, j]} épocas", ha="center", va="center", fontsize=8.5,
+            eje.text(j, i, f"{_pct(porcentaje[i, j])}\n{textos.epocas(c.matriz[i, j])}", ha="center", va="center", fontsize=8.5,
                      color="white" if porcentaje[i, j] > 0.5 else TINTA, linespacing=1.4)
     eje.set_xticks(range(len(c.clases)), c.clases)
     eje.set_yticks(range(len(c.clases)), c.clases)

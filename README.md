@@ -49,13 +49,15 @@ Proyecto de grado de la Maestría en Inteligencia Artificial (Universidad de los
 
 ## 3. Arquitectura
 
-<!-- PENDIENTE (María José): diagrama de arquitectura (reports/figures/arquitectura.png) -->
+![Arquitectura del despliegue: tablero y API en una instancia EC2, con el modelo campeón en un volumen local](reports/figures/arquitectura.png)
+
+El usuario solo accede al tablero (puerto 8501). La API no se publica a Internet: el tablero la llama por la red interna de Docker. La API carga al arrancar la copia local del modelo campeón; con `MODEL_USE_MLFLOW=false`, la configuración de la versión desplegada, la predicción no depende de que MLflow esté encendido.
 
 | Componente | Tecnología | Función |
 |---|---|---|
 | Tablero | Streamlit | Selección del estudio y de las señales; hipnograma, distribución de estadios y revisión por época |
 | API | FastAPI | Recibe las épocas y las señales disponibles y devuelve, por época, el estadio predicho, la confianza y las probabilidades |
-| Modelos | PyTorch (TinySleepNet) y XGBoost | La API carga desde MLflow el modelo marcado como campeón |
+| Modelo | PyTorch: TinySleepNet flexible con rama EMG | Un solo modelo para las 12 combinaciones de señales; la API carga el campeón marcado en MLflow (`champion=true`) desde una copia local |
 | Contenedores | Docker y Docker Compose | Un servicio para la API y otro para el tablero |
 | Nube | AWS EC2 | Aloja los contenedores <!-- PENDIENTE (Daniel): tamaño de la instancia y región --> |
 | Experimentos y datos | MLflow y DVC sobre S3 | Registro de experimentos, versionado de datos y almacenamiento de los modelos |
@@ -63,11 +65,15 @@ Proyecto de grado de la Maestría en Inteligencia Artificial (Universidad de los
 ## 4. Instrucciones de uso
 
 1. Abrir el tablero (sección 2).
-2. **Pantalla 1:** elegir un estudio de demostración y activar las señales disponibles (al menos un EEG). Solo se ofrecen las combinaciones con un modelo entrenado.
-3. Elegir el modelo y ejecutar la clasificación.
-4. **Pantalla 2:** revisar el resumen del estudio (eficiencia de sueño y porcentaje por estadio), el hipnograma y la predicción de cada época, con su confianza y sus probabilidades. Las épocas de baja confianza aparecen resaltadas.
+2. **Carga:** elegir un estudio de demostración o subir un EDF propio (el hipnograma del experto es opcional) y marcar las señales disponibles. Se necesita al menos un EEG; con EOG y EMG opcionales hay 12 combinaciones.
+3. Pulsar **Generar clasificación**. Una barra muestra el avance; en la versión desplegada, una noche de Sleep Cassette tardó entre 20 y 40 segundos.
+4. **Resultados:** ventana analizada; indicadores (tiempo total de sueño, inicio y fin del sueño, despierto tras dormirse, latencia de REM y épocas para revisar); tiempo en cada estadio; hipnograma; visor de la señal por época con la confianza y la segunda opción del modelo; comparación con el experto, si se cargó su hipnograma; y descarga del informe en PDF y de los datos por época en Excel.
 
-<!-- PENDIENTE (María José): capturas de las dos pantallas de la versión desplegada -->
+El [manual de usuario](app/dashboard/manuales/Manual_Usuario_Tablero.md) explica cada elemento de la pantalla.
+
+| Carga del registro | Resultados |
+|---|---|
+| ![Pantalla de carga del tablero](app/dashboard/manuales/capturas/01_carga.png) | ![Pantalla de resultados del tablero](app/dashboard/manuales/capturas/04a_resultados.png) |
 
 ## 5. Ejemplos de entrada y salida
 
