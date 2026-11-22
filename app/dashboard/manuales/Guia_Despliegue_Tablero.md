@@ -31,7 +31,7 @@ app/dashboard/
 ├── fuentes/             # URW Gothic (versión libre de Century Gothic) para el PDF
 ├── textos.py            # todos los textos y ayudas que ve el usuario
 ├── pantallas/           # carga.py, inferencia.py, resultados.py
-├── estudios_demo/       # .npz generados con scripts/generar_estudios_demo.py
+├── estudios_demo/       # EDF de demostración (no se versionan) y su .json de descripción
 ├── tests/               # pruebas + API simulada + datos sintéticos
 ├── .streamlit/config.toml
 ├── Dockerfile
@@ -168,8 +168,8 @@ archivos de `datos_sinteticos/`.
 ### 4.3 Probar con la API real
 
 ```bash
-# Terminal 1: API real (necesita .env con las credenciales de MLflow)
-uvicorn app.api.main:app --port 8000
+# Terminal 1: API real con el modelo versionado en modelos/ (no necesita MLflow)
+MODEL_PATH=modelos/flexible_emg_mlp_final.pth uvicorn app.api.main:app --port 8000
 
 # Terminal 2
 cd app/dashboard
@@ -184,31 +184,32 @@ python -m pytest app/dashboard/tests -q
 
 Cubren las 12 combinaciones, el contrato de 8 canales, el recorte, los
 indicadores, el kappa, la lectura de EDF, la configuración y los errores de la
-API, y la generación del PDF y el Excel (32 pruebas).
+API, y la generación del PDF y el Excel.
 
 ---
 
 ## 5. Estudios de demostración
 
-Se generan una sola vez, en un equipo que tenga el dataset descargado con DVC:
+Se generan una sola vez, en un equipo que tenga el dataset descargado con DVC.
+La versión desplegada usa los EDF originales completos de cuatro personas de
+prueba (SC4191, SC4241, SC4401 y SC4741):
 
 ```bash
 dvc pull data/sleep-edfx.dvc data/SC-subjects-split.xlsx.dvc
 python scripts/generar_estudios_demo.py \
-    --datos data/sleep-edfx/<carpeta con los EDF de sleep-cassette> \
-    --particion data/SC-subjects-split.xlsx
+    --datos data/sleep-edfx/sleep-cassette \
+    --particion data/SC-subjects-split.xlsx \
+    --sujetos 19 24 40 74 --formato edf
 ```
 
 - Solo acepta sujetos con `split = test`. Si se le pasa uno de entrenamiento,
   se detiene con un mensaje.
-- Por defecto elige a la persona de menor y a la de mayor edad del conjunto de
-  prueba (noche 1). Con `--sujetos 4 71` se eligen otros.
-- Cada archivo pesa unos 15 a 20 MB y queda en `app/dashboard/estudios_demo/`.
-  Así entra en la imagen Docker del tablero sin pasos adicionales.
-
-Si se prefiere no versionar los `.npz` en Git, se pueden subir a S3 con DVC y
-montar la carpeta como volumen en EC2, indicando la ruta con
-`TABLERO_CARPETA_DEMOS`.
+- `--formato edf` copia el PSG y el hipnograma originales sin recorte y crea un
+  `.json` de descripción por estudio; `--formato npz` genera una versión
+  recortada y compacta.
+- Los EDF no se versionan en Git: se copian a `app/dashboard/estudios_demo/`
+  en el servidor antes de construir la imagen del tablero. También se puede
+  montar otra carpeta e indicarla con `TABLERO_CARPETA_DEMOS`.
 
 ---
 
@@ -216,9 +217,10 @@ montar la carpeta como volumen en EC2, indicando la ruta con
 
 ### 6.1 Instancia
 
-- Recomendado: **t3.medium (4 GB de RAM) o superior**. Un EDF de una noche
-  ocupa unos 300 MB en memoria mientras se lee, y la API carga PyTorch.
-- Disco: 20 GB o más (imágenes Docker y caché de modelos de MLflow).
+- Desplegada: **c7i-flex.large (2 vCPU, 4 GiB de RAM)** con Ubuntu Server
+  24.04, en us-east-2. Los dos contenedores usan cerca de 1.9 GiB (API 745 MiB
+  y tablero 1.1 GiB); una instancia de 2 GiB no alcanza.
+- Disco: 30 GB (las imágenes ocupan 3.1 GB la API y 1.7 GB el tablero).
 - Grupo de seguridad:
   - Entrada **TCP 8501** desde `0.0.0.0/0`: el tablero, único puerto público.
   - Entrada **TCP 22** solo desde su IP, para administrar.
@@ -229,14 +231,10 @@ montar la carpeta como volumen en EC2, indicando la ruta con
 ### 6.2 Preparar la instancia (una sola vez)
 
 ```bash
-sudo dnf install -y docker git          # Amazon Linux 2023 (en Ubuntu: apt)
-sudo systemctl enable --now docker
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git
+curl -fsSL https://get.docker.com | sudo sh     # Docker Engine y el plugin de Compose
 sudo usermod -aG docker $USER && newgrp docker
-# Plugin de Docker Compose
-sudo mkdir -p /usr/local/lib/docker/cli-plugins
-sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
-     -o /usr/local/lib/docker/cli-plugins/docker-compose
-sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 docker compose version
 ```
 
@@ -244,7 +242,8 @@ docker compose version
 
 ```bash
 git clone <repositorio> && cd proyecto-despliegue-de-soluciones-G10
-cp .env.example .env        # completar MLFLOW_TRACKING_URI, usuario y clave
+cp .env.example .env        # con MODEL_USE_MLFLOW=false no hace falta llenar MLflow
+# copiar los EDF de las demos a app/dashboard/estudios_demo/ (sección 5)
 docker compose up -d --build
 docker compose ps           # ambos servicios deben quedar "healthy"
 ```
@@ -270,7 +269,7 @@ Lista de verificación funcional:
 - [ ] Un EDF subido **sin** hipnograma se clasifica y no muestra la sección de
       comparación.
 - [ ] Al desmarcar los dos EEG aparece el aviso y el botón queda deshabilitado.
-- [ ] Las seis combinaciones sin EMG funcionan.
+- [ ] Las 12 combinaciones funcionan, incluidas las que usan EMG.
 - [ ] El informe PDF y los datos por época en Excel se descargan y se abren.
 - [ ] Con la API detenida (`docker compose stop api`) el tablero muestra
       "No hay conexión…" y no una traza de Python.
@@ -306,11 +305,11 @@ El README debe reportar tiempos de inferencia. Con la API real en EC2:
 
 ---
 
-## 8. Pendientes que dependen de la API
+## 8. Estado de la integración con la API
 
-| Pendiente | Efecto en el tablero mientras no esté |
+| Elemento | Estado |
 |---|---|
-| `GET /models` | Usa la sección `modelo:` de `configs/app.yaml` (6 combinaciones sin EMG) |
-| Modelo con EMG | La casilla EMG aparece deshabilitada con "El modelo aún no la usa" |
-| Etiqueta `champion` en MLflow | Ninguno en el tablero; afecta qué modelo carga la API |
-| Valores de `desempeno_referencia` | La tarjeta del modelo no muestra el desempeño |
+| `GET /models` | No existe en la API; el tablero usa la sección `modelo:` de `configs/app.yaml` y deriva de sus cuatro `canales_modelo` las 12 combinaciones |
+| Modelo con EMG | Desplegado: el campeón es TinySleepNet flexible con EMG |
+| Etiqueta `champion` en MLflow | Run `95951e2a2cfd4368970636cc6bdea9b5`; su copia local está en `modelos/` |
+| `desempeno_referencia` | Lleno con la prueba (exactitud 0.826, kappa 0.762); la tarjeta del modelo lo muestra |

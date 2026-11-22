@@ -37,14 +37,16 @@ modelo:
     - EOG horizontal
     - EMG submental
   clases: [W, N1, N2, N3, REM]
-  # Desempeño del modelo en personas que no participaron en el entrenamiento.
-  # Dejar en null hasta tener los valores definitivos del artículo; mientras
-  # sean null, el tablero no muestra la sección.
+  # Desempeño del modelo en personas que no participaron en el entrenamiento
+  # (16 personas de prueba de Sleep Cassette, 44 985 épocas). Si se deja en
+  # null, el tablero no muestra la sección.
   desempeno_referencia:
-    exactitud: null
-    kappa: null
-    f1_macro: null
-    descripcion_evaluacion: null
+    exactitud: 0.826
+    kappa: 0.762
+    f1_macro: 0.784
+    descripcion_evaluacion: >-
+      Valores con EEG Fpz-Cz, EOG y EMG en 16 personas de prueba de
+      Sleep-EDF; con un solo EEG la coincidencia es del 78 al 80 %.
 
 senales:
   frecuencia_hz: 100

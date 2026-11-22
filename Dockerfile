@@ -1,4 +1,5 @@
-# Imagen compartida para ejecutar la API y el tablero del proyecto.
+# Imagen de la API de inferencia (FastAPI + PyTorch para CPU).
+# El tablero tiene su propia imagen: app/dashboard/Dockerfile.
 FROM python:3.12-slim
 
 WORKDIR /app

@@ -55,7 +55,7 @@ app = FastAPI(title="Sleep Stage Classification API", version="0.3.0")
 
 
 class PredictionRequest(BaseModel):
-    """Quince épocas contiguas de EEG Fpz-Cz expresadas en microvoltios."""
+    """Secuencias de 15 épocas contiguas con 8 canales (4 señales y sus marcas de presencia), en microvoltios."""
 
     channel_names: List[str] = Field(
         default_factory=lambda: list(DL_CHANNEL_NAMES),
@@ -66,8 +66,9 @@ class PredictionRequest(BaseModel):
     model_artifact: str = Field(
         default=MLFLOW_ARTIFACT_PATH,
         description=(
-            "Nombre o ruta relativa exacta del checkpoint en MLflow. La API usa "
-            "el run terminado más reciente que lo contiene."
+            "Nombre o ruta relativa exacta del checkpoint en MLflow. Con "
+            "MODEL_USE_MLFLOW=true, la API usa el run marcado como campeón "
+            "(champion=true) que lo contiene."
         ),
     )
     epochs: List[Any] = Field(

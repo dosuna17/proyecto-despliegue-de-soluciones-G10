@@ -1,4 +1,7 @@
-# Solo se versiona esta referencia de carpeta; no pesos ni artefactos pesados.
+# Solo se versiona el modelo campeón desplegado (unos 6 MB) y su referencia a
+# MLflow, para que la aplicación funcione sin credenciales. Ningún otro peso ni
+# artefacto pesado va a Git.
 *
 !.gitignore
-
+!flexible_emg_mlp_final.pth
+!flexible_emg_mlp_final.pth.metadata.json
