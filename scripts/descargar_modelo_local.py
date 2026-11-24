@@ -25,8 +25,8 @@ def main() -> None:
     parser.add_argument(
         "--salida",
         type=Path,
-        default=Path(os.getenv("MODEL_PATH", "modelos/flexible_final.pth")),
-        help="Ruta local del checkpoint (por defecto MODEL_PATH o modelos/flexible_final.pth).",
+        default=Path(os.getenv("MODEL_PATH", "modelos/flexible_emg_mlp_final.pth")),
+        help="Ruta local del checkpoint (por defecto MODEL_PATH o modelos/flexible_emg_mlp_final.pth).",
     )
     parser.add_argument(
         "--artefacto",

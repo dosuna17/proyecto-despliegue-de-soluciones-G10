@@ -29,15 +29,11 @@ venv/
 dump_repo.py
 repo_dump.txt
 
-# Pesos de modelos entrenados (nunca van a git, se manejan manual/MLflow)
+# Pesos de modelos entrenados: se manejan con MLflow. La única excepción es el
+# campeón desplegado, que se versiona en modelos/ (ver modelos/.gitignore).
 *.pth
 *.metadata.json
 test_metrics_final.json
-# Utilidades locales, pendientes de decidir si se comparten con el equipo
-sync_to_mlflow.py
-confusion_matrix_avanzado.png
-*.db
-
 # Utilidades locales, pendientes de decidir si se comparten con el equipo
 sync_to_mlflow.py
 confusion_matrix_avanzado.png

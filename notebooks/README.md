@@ -136,7 +136,8 @@ usando ventanas de 4 s. La banda total es 0.5–30 Hz.
 
 ### Canal EMG submental: `EMG_submental__*` (5)
 
-En Sleep Cassette, este canal ya viene como envolvente RMS muestreada a 1 Hz.
+En Sleep Cassette, este canal ya viene como envolvente muestreada a 1 Hz: la
+señal se filtró sobre 16 Hz, se rectificó y se suavizó, y se expresa en µV RMS.
 Por eso las features se calculan sobre las 30 muestras originales de cada
 época, y no sobre un espectro.
 

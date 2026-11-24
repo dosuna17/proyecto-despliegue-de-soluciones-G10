@@ -15,9 +15,10 @@ services:
       MLFLOW_HTTP_REQUEST_TIMEOUT: ${MLFLOW_HTTP_REQUEST_TIMEOUT:-15}
       MLFLOW_ARTIFACT_PATH: ${MLFLOW_ARTIFACT_PATH:-modelo_final/flexible_emg_mlp_final.pth}
       MODEL_USE_MLFLOW: ${MODEL_USE_MLFLOW:-false}
-      MODEL_PATH: ${MODEL_PATH:-/models/flexible_final.pth}
+      MODEL_PATH: ${MODEL_PATH:-/models/flexible_emg_mlp_final.pth}
     volumes:
-      # La API puede persistir aqui el champion descargado desde MLflow.
+      # Modelo campeón versionado en modelos/. Con MODEL_USE_MLFLOW=true la API
+      # también guarda aquí la copia actualizada desde MLflow.
       - ${MODEL_DIR:-./modelos}:${MODEL_MOUNT_PATH:-/models}
     restart: unless-stopped
     healthcheck:
@@ -52,3 +53,5 @@ services:
       TABLERO_SOLICITUDES_PARALELAS: ${TABLERO_SOLICITUDES_PARALELAS:-}
       TABLERO_SECUENCIAS_POR_SOLICITUD: ${TABLERO_SECUENCIAS_POR_SOLICITUD:-}
       TABLERO_TIMEOUT_INFERENCIA_S: ${TABLERO_TIMEOUT_INFERENCIA_S:-}
+      TABLERO_TAMANO_MAXIMO_MB: ${TABLERO_TAMANO_MAXIMO_MB:-}
+      TABLERO_CARPETA_DEMOS: ${TABLERO_CARPETA_DEMOS:-}
