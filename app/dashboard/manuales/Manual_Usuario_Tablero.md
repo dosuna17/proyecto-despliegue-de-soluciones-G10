@@ -43,7 +43,8 @@ registro» vuelve a la carga.*
 ![Pantalla de carga con un estudio de demostración que trae las cuatro señales](capturas/01_carga.png)
 
 *Figura 2. Carga con el estudio de demostración SC4241E0: las cuatro señales
-están disponibles y el tablero indica la combinación elegida (12 de 12).*
+están disponibles, el tablero indica la combinación elegida (12 de 12) y la
+tarjeta del modelo muestra su desempeño en personas no vistas.*
 
 ### 2.1 Elegir el registro
 
@@ -125,7 +126,7 @@ Pulse **Generar clasificación** para continuar.
 
 ![Aviso «Estamos generando la clasificación» con la barra de avance](capturas/03_clasificando.png)
 
-*Figura 4. Clasificación en curso: lote 16 de 30 y tiempo restante.*
+*Figura 4. Clasificación en curso: lote 22 de 45 y tiempo restante.*
 
 Aparece el aviso **"Estamos generando la clasificación"** con una barra de
 avance y el tiempo estimado restante. Mientras tanto el tablero:
@@ -136,7 +137,7 @@ avance y el tiempo estimado restante. Mientras tanto el tablero:
 
 No cierre ni recargue la página. La duración depende del largo del registro;
 la barra muestra cuánto falta. En la versión desplegada, una noche de Sleep
-Cassette (de 14 a 21 horas grabadas) tardó entre 20 y 40 segundos. Si el servicio no responde, el tablero lo indica
+Cassette (de 20 a 23 horas grabadas) tardó entre 35 y 38 segundos con las cuatro señales. Si el servicio no responde, el tablero lo indica
 con un mensaje y un botón para volver a intentarlo.
 
 ---
@@ -220,9 +221,9 @@ horizontal:
 
 ![Visor de señal en una época N1 de baja confianza, con la segunda opción del modelo](capturas/05_visor_baja_confianza.png)
 
-*Figura 6. Época 820 en la vista de 30 s: el modelo eligió N1 con 63 % de
-confianza (⚠, conviene revisarla) y su segunda opción fue N2 (36 %); el experto
-también marcó N1.*
+*Figura 6. Época 1 327 en la vista de 30 s: el modelo eligió N1 con 55 % de
+confianza (⚠, conviene revisarla) y su segunda opción fue vigilia (43 %); el
+experto marcó vigilia, justo la segunda opción.*
 
 Muestra las señales registradas, **cada una con su propio color** y su nombre a
 la izquierda, sobre un fondo limpio. Encima de cada época hay una **franja con
@@ -246,11 +247,12 @@ vertical, indicada junto a su nombre (por ejemplo, *escala ±37 µV*). Al pasar
 el cursor sobre la señal se ve su valor real en µV. El EMG tiene un valor por
 segundo, por eso se ve escalonado.
 
-![Vista de 5 minutos en la que el EMG aumenta al pasar de sueño a vigilia](capturas/06_visor_emg_5min.png)
+![Vista de 5 minutos alrededor de una época REM de baja confianza](capturas/06_visor_emg_5min.png)
 
-*Figura 7. Vista de 5 minutos: al pasar de N2 a vigilia (W) aumentan la
-actividad del EEG y del EOG y el tono muscular (EMG). Esta época está fuera de la
-ventana analizada, por eso no cuenta en los indicadores.*
+*Figura 7. Vista de 5 minutos alrededor de la época 1 360, resaltada en gris:
+el paso de N2 a REM con los movimientos oculares (EOG) y los cambios del tono
+muscular (EMG). El modelo eligió REM con 72 % de confianza (segunda opción N1) y
+el experto marcó N2: el contexto ayuda a decidir.*
 
 Debajo se muestra el detalle de la época seleccionada:
 
@@ -285,7 +287,7 @@ el modelo no predice esas categorías.
 ![Comparación con el experto: coincidencia, kappa y matriz de confusión](capturas/04b_resultados_comparacion.png)
 
 *Figura 8. Parte final de los resultados: visor de señal, comparación con el
-experto (coincidencia 83 %, kappa 0.76) y descargas.*
+experto (coincidencia 84 %, kappa 0.77) y descargas.*
 
 Si no se cargó el hipnograma del experto, esta sección no aparece y el
 hipnograma muestra solo la clasificación del modelo. La ventana analizada y los
