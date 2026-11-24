@@ -29,6 +29,8 @@ Proyecto de grado de la Maestría en Inteligencia Artificial (Universidad de los
 
 **Solución.** Un modelo de aprendizaje de máquina asigna a cada época uno de cinco estadios, y una aplicación web muestra el resultado y las épocas que conviene revisar.
 
+![Flujo de la solución, del registro de polisomnografía al tablero desplegado](reports/figures/articulo/fig_flujo.png)
+
 **Alcance.**
 
 | Aspecto | Decisión |
@@ -52,7 +54,7 @@ Proyecto de grado de la Maestría en Inteligencia Artificial (Universidad de los
 
 ## 3. Arquitectura
 
-![Arquitectura del despliegue: tablero y API en una instancia EC2, con el modelo campeón en un volumen local](reports/figures/arquitectura.png)
+![Arquitectura del despliegue: tablero y API en una instancia EC2, con el modelo campeón en un volumen local](reports/figures/articulo/fig_despliegue.png)
 
 El usuario solo accede al tablero (puerto 8501). La API no se publica a Internet: el tablero la llama por la red interna de Docker. La API usa una copia local del modelo campeón ([`modelos/flexible_emg_mlp_final.pth`](modelos)): la carga la primera vez que clasifica y la mantiene en memoria. Con `MODEL_USE_MLFLOW=false`, la configuración de la versión desplegada, la predicción no depende de que MLflow esté encendido; con `true`, la API consulta en MLflow el campeón vigente en cada solicitud y actualiza la copia si cambió.
 
@@ -451,7 +453,7 @@ Ninguna credencial se guarda en el repositorio. El archivo [`.env.example`](.env
 ├── data/                 # Referencias DVC (los datos no se suben a Git)
 ├── modelos/              # Modelo campeón desplegado (6 MB) y su run_id de MLflow
 ├── notebooks/            # Exploración, modelos clásicos y referencias (YASA)
-├── reports/              # Figuras y ejemplos de salida del tablero
+├── reports/              # Figuras (incluidas las del artículo) y ejemplos de salida del tablero
 ├── scripts/              # Un comando por etapa
 ├── src/                  # Código del pipeline y de los modelos
 ├── tests/                # Pruebas automáticas
