@@ -8,7 +8,7 @@ comprobar que quedó bien.
 
 ## 1. Arquitectura
 
-![Arquitectura del despliegue: tablero y API en una instancia EC2](../../../reports/figures/arquitectura.png)
+![Arquitectura del despliegue: tablero y API en una instancia EC2](../../../reports/figures/articulo/fig_despliegue.png)
 
 - El **tablero** no tiene modelos, PyTorch ni el dataset. Lee la señal, la
   prepara, llama a la API y presenta el resultado.
