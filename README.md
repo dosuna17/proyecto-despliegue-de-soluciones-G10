@@ -197,7 +197,7 @@ docker compose ps                 # los dos servicios deben quedar "healthy"
 - Documentación interactiva de la API: http://localhost:8000/docs
 - Estado de la API y modelo cargado: `curl http://localhost:8000/health`
 
-Los estudios de demostración son EDF originales de Sleep-EDF y no se versionan en Git. Para que aparezcan en el tablero, se copian a `app/dashboard/estudios_demo/` antes de construir la imagen, o se generan con el script (sección 9, paso 4). Sin ellos, el tablero permite subir un EDF propio, por ejemplo uno descargado de [PhysioNet](https://physionet.org/content/sleep-edfx/1.0.0/sleep-cassette/).
+Los estudios de demostración son EDF originales de Sleep-EDF y no se versionan en Git. Para que aparezcan en el tablero, se descargan de PhysioNet a `app/dashboard/estudios_demo/` antes de construir la imagen (sección 9, paso 4). Sin ellos, el tablero permite subir un EDF propio, por ejemplo uno descargado de [PhysioNet](https://physionet.org/content/sleep-edfx/1.0.0/sleep-cassette/).
 
 El proyecto tiene tres archivos de dependencias: [`requirements.txt`](requirements.txt) en la raíz, para entrenar y reproducir los resultados; [`app/api/requirements.txt`](app/api/requirements.txt), para la imagen de la API; y [`app/dashboard/requirements.txt`](app/dashboard/requirements.txt), para la del tablero. Para correr el tablero sin Docker y sus pruebas automáticas, ver la [guía de despliegue del tablero](app/dashboard/manuales/Guia_Despliegue_Tablero.md).
 
@@ -229,14 +229,27 @@ cd proyecto-despliegue-de-soluciones-G10
 cp .env.example .env
 ```
 
-Con `MODEL_USE_MLFLOW=false` (el valor desplegado) la API usa el modelo de `modelos/` y no necesita credenciales. Solo si se quiere que la API siga al campeón de MLflow se pone `true` y se completan `MLFLOW_TRACKING_URI`, usuario y clave; el `.env` nunca se sube a Git.
+El modelo campeón ya viene en `modelos/flexible_emg_mlp_final.pth`, así que con los valores de `.env.example` (`MODEL_USE_MLFLOW=false`) la API funciona desde el primer arranque, sin credenciales ni conexión a MLflow. Los demás campos se pueden dejar como vienen.
 
-**4. Copiar los estudios de demostración** a `app/dashboard/estudios_demo/` (los `*-PSG.edf` y `*-Hypnogram.edf` de SC4191, SC4241, SC4401 y SC4741, con `scp` desde un equipo que los tenga), o generarlos en un equipo con el dataset descargado:
+Cuando el equipo publique un nuevo campeón en MLflow, la copia local se actualiza de una de estas dos formas:
+
+- Poner temporalmente `MODEL_USE_MLFLOW=true` y completar `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_USERNAME` y `MLFLOW_TRACKING_PASSWORD`, que se solicitan al equipo y no se publican. En la siguiente clasificación, la API consulta el campeón vigente y, si cambió, lo descarga a `modelos/`. Después se vuelve a `false`, para que la API no consulte MLflow en cada solicitud.
+- O ejecutar `python scripts/descargar_modelo_local.py` con esas mismas variables (ver «Actualizar el modelo» al final de esta sección).
+
+El `.env` nunca se sube a Git.
+
+**4. (Opcional) Agregar los estudios de demostración.** Sin ellos el tablero funciona igual y permite subir un EDF propio. Son registros públicos de Sleep-EDF de cuatro personas de prueba; sus descripciones ya están en `app/dashboard/estudios_demo/*.json`. Para descargar los EDF originales desde PhysioNet:
 
 ```bash
-python scripts/generar_estudios_demo.py --datos data/sleep-edfx/sleep-cassette \
-    --particion data/SC-subjects-split.xlsx --sujetos 19 24 40 74 --formato edf
+cd app/dashboard/estudios_demo
+for f in SC4191E0-PSG SC4191EP-Hypnogram SC4241E0-PSG SC4241EC-Hypnogram \
+         SC4401E0-PSG SC4401EC-Hypnogram SC4741E0-PSG SC4741EA-Hypnogram; do
+  wget -nc https://physionet.org/files/sleep-edfx/1.0.0/sleep-cassette/$f.edf
+done
+cd ../../..
 ```
+
+También se pueden copiar con `scp` desde un equipo que ya los tenga. Si se agregan después de levantar la aplicación, hay que reconstruir el tablero (`docker compose up -d --build dashboard`), porque los estudios van dentro de su imagen.
 
 **5. Construir y levantar:**
 
