@@ -78,7 +78,7 @@ El [manual de usuario](app/dashboard/manuales/Manual_Usuario_Tablero.md) explica
 
 | Carga del registro | Resultados |
 |---|---|
-| ![Pantalla de carga del tablero](app/dashboard/manuales/capturas/01_carga.png) | ![Pantalla de resultados del tablero](app/dashboard/manuales/capturas/04a_resultados.png) |
+| ![Paso 1: elegir un estudio de demostración o subir un EDF](app/dashboard/manuales/capturas/paso01_estudios_demostracion.png) | ![Hipnograma del modelo y del experto con la franja de coincidencias](app/dashboard/manuales/capturas/paso09_hipnograma.png) |
 
 ## 5. Ejemplos de entrada y salida
 
