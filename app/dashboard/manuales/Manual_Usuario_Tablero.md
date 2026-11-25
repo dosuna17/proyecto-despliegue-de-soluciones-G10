@@ -3,7 +3,8 @@
 **Asistente de clasificación de estadios del sueño**
 
 Este manual está dirigido al técnico o profesional de sueño que usa el tablero.
-Explica cómo analizar un registro y qué significa cada elemento de la pantalla.
+Explica, paso a paso, cómo analizar un registro y qué significa cada elemento
+de la pantalla.
 
 > **Herramienta de apoyo, no de diagnóstico.** La clasificación la genera un
 > modelo de aprendizaje automático y puede contener errores. Debe ser revisada
@@ -28,56 +29,79 @@ Con esa clasificación construye el hipnograma, calcula indicadores del sueño,
 señala las épocas en las que el modelo tuvo dudas y permite descargar el
 resultado.
 
-El uso tiene tres etapas, que se ven en la parte superior de la pantalla:
-**1 · Carga del registro → 2 · Clasificación → 3 · Resultados**.
+El uso tiene tres etapas, que se ven en la parte superior de la pantalla y se
+resumen en la Figura 1: **1 · Carga del registro**, donde se elige el registro
+y las señales; **2 · Clasificación**, mientras el modelo trabaja; y
+**3 · Resultados**, donde se revisa y se descarga el análisis. Desde los
+resultados, el botón *Analizar otro registro* vuelve a la primera etapa.
 
 ![Flujo de uso del tablero en tres etapas](capturas/flujo_tablero.png)
 
-*Figura 1. Las tres etapas del tablero. Desde los resultados, «Analizar otro
-registro» vuelve a la carga.*
+*Figura 1. Las tres etapas del tablero y lo que ocurre en cada una.*
 
 ---
 
-## 2. Etapa 1: cargar el registro y elegir las señales
+## 2. Etapa 1: carga del registro
 
-![Pantalla de carga con un estudio de demostración que trae las cuatro señales](capturas/01_carga.png)
+Es la primera sección de la interfaz. Tiene dos pasos, **1. Registro** y
+**2. Señales**, y termina con la tarjeta del modelo y el botón
+**Generar clasificación**.
 
-*Figura 2. Carga con el estudio de demostración SC4241E0: las cuatro señales
-están disponibles, el tablero indica la combinación elegida (12 de 12) y la
-tarjeta del modelo muestra su desempeño en personas no vistas.*
+### 2.1 Paso 1: Registro
 
-### 2.1 Elegir el registro
+En **1. Registro** encontrará dos opciones: *Estudio de demostración* y
+*Subir mi registro (EDF)*.
 
-Hay dos opciones:
+**Estudio de demostración.** Son registros reales de la base pública Sleep-EDFx
+(Sleep Cassette) de personas que **no** se usaron para entrenar el modelo, e
+incluyen el hipnograma del experto para comparar. Al abrir el menú *Estudio*
+aparecen los cuatro estudios disponibles (Figura 2), y puede elegir cualquiera:
 
-- **Estudio de demostración.** Registros reales de la base pública Sleep-EDFx
-  (Sleep Cassette) de personas que **no** se usaron para entrenar el modelo.
-  Incluyen el hipnograma del experto, así que permiten comparar.
-- **Subir mi registro (EDF).**
-  - *Archivo de señales (PSG)*, obligatorio. Formato EDF o EDF+, máximo 200 MB.
-  - *Hipnograma del experto*, opcional. Si lo sube, el tablero compara la
-    clasificación del modelo con la del experto.
+| Estudio | Persona |
+|---|---|
+| SC4191E0 | Hombre de 28 años, noche 1 |
+| SC4241E0 | Mujer de 54 años, noche 1 |
+| SC4401E0 | Mujer de 67 años, noche 1 |
+| SC4741E0 | Hombre de 92 años, noche 1 |
 
-Los archivos se procesan solo durante su sesión y no se guardan en el servidor.
+![Menú de estudios de demostración con los cuatro registros disponibles](capturas/paso01_estudios_demostracion.png)
 
-El cuadro para subir archivos muestra sus textos en inglés (*Drag and drop file
-here*, *Browse files*): es el componente estándar de la herramienta con la que
-se construyó el tablero. Puede arrastrar el archivo al cuadro o pulsar
-*Browse files* para buscarlo.
+*Figura 2. Opción «Estudio de demostración»: el menú muestra los cuatro
+estudios; en este manual se usa SC4241E0.*
 
-![Opción «Subir mi registro» con el archivo de señales y el hipnograma cargados](capturas/02_subir_edf.png)
+**Subir mi registro (EDF).** Aparecen dos cuadros para cargar archivos
+(Figura 3):
 
-*Figura 3. Registro propio: archivo de señales (obligatorio) e hipnograma del
-experto (opcional). Debajo aparecen la duración, la hora de inicio y si hay
-hipnograma.*
+- *Archivo de señales (PSG)*, **obligatorio**. Formato EDF o EDF+, máximo
+  200 MB, con al menos un EEG (Fpz-Cz o Pz-Oz).
+- *Hipnograma del experto*, **opcional**. Si lo sube, el tablero compara la
+  clasificación del modelo con la del experto.
 
-Al leer el archivo, el tablero muestra la duración del registro, la hora de
-inicio de la grabación y si hay hipnograma. Si alguna señal venía a una
-frecuencia distinta de 100 Hz, la ajusta y lo informa.
+Puede arrastrar cada archivo a su cuadro o pulsar *Browse files* para buscarlo.
+Los textos del cuadro están en inglés (*Drag and drop file here*, *Browse
+files*) porque es el componente estándar de la herramienta con la que se
+construyó el tablero. Los archivos se procesan solo durante su sesión y no se
+guardan en el servidor.
 
-### 2.2 Elegir las señales
+![Opción «Subir mi registro» con los cuadros para el archivo de señales y el hipnograma](capturas/paso02_subir_registro.png)
 
-El tablero revisa qué señales contiene el archivo y muestra cuatro casillas:
+*Figura 3. Opción «Subir mi registro (EDF)»: archivo de señales (obligatorio) e
+hipnograma del experto (opcional).*
+
+Al seleccionar un estudio o leer el archivo subido, el tablero muestra la
+**duración del registro**, la **hora de inicio de la grabación**, si hay
+**hipnograma del experto** y el número de épocas de 30 segundos (Figura 4). Si
+alguna señal venía a una frecuencia distinta de 100 Hz, la ajusta y lo informa.
+
+![Estudio SC4241E0 seleccionado: duración, hora de inicio e hipnograma del experto](capturas/paso03_registro_cargado.png)
+
+*Figura 4. SC4241E0 seleccionado: 22 h 31 min de registro, grabación iniciada a
+las 16:04, con hipnograma del experto y 2 702 épocas.*
+
+### 2.2 Paso 2: Señales
+
+En **2. Señales** el tablero revisa qué señales contiene el registro y muestra
+cuatro casillas (Figura 5):
 
 | Casilla | Para qué le sirve al modelo |
 |---|---|
@@ -94,11 +118,6 @@ Debajo de cada casilla aparece su estado:
   entrenado con ella. Con el modelo actual no aparece, porque usa las cuatro
   señales.
 
-**Sobre el EMG.** El modelo se entrenó con el EMG tal como viene en Sleep-EDF:
-la envolvente del tono muscular, con un valor por segundo (1 Hz). Si el archivo
-trae el EMG a otra frecuencia (por ejemplo, la señal cruda a 100 Hz o más), el
-tablero no lo usa, lo informa con un aviso y continúa con las demás señales.
-
 **Regla:** se necesita **al menos una señal EEG** (Fpz-Cz o Pz-Oz). EOG y EMG
 son opcionales. Esto da 12 combinaciones posibles:
 
@@ -108,52 +127,76 @@ son opcionales. Esto da 12 combinaciones posibles:
 | Pz-Oz | 5 | 6 | 7 | 8 |
 | Fpz-Cz + Pz-Oz | 9 | 10 | 11 | 12 |
 
-El tablero indica en verde qué combinación eligió (por ejemplo, *Combinación 10
-de 12*). Si la selección no es válida, explica por qué y no deja continuar.
+El tablero indica en verde qué combinación eligió (en la Figura 5,
+*Combinación 12 de 12*). Si la selección no es válida, explica por qué y no
+deja continuar.
 
-### 2.3 Modelo
+**Sobre el EMG.** El modelo se entrenó con el EMG tal como viene en Sleep-EDF:
+la envolvente del tono muscular, con un valor por segundo (1 Hz). Si el archivo
+trae el EMG a otra frecuencia (por ejemplo, la señal cruda a 100 Hz o más), el
+tablero no lo usa, lo informa con un aviso y continúa con las demás señales.
+
+![Paso 2: las cuatro señales disponibles y la combinación 12 de 12](capturas/paso04_senales.png)
+
+*Figura 5. Las cuatro señales de SC4241E0 están disponibles y marcadas: el
+tablero usará la combinación 12 de 12.*
+
+### 2.3 Modelo y Generar clasificación
 
 El tablero usa un único modelo, el que obtuvo el mejor desempeño en la
-evaluación del proyecto. La tarjeta *Modelo de clasificación* indica cuál es y,
-cuando está disponible, qué tan bien coincidió con los expertos en personas
-que no participaron en su entrenamiento.
+evaluación del proyecto. La tarjeta *Modelo de clasificación* indica cuál es y
+qué tan bien coincidió con los expertos en personas que no participaron en su
+entrenamiento: 83 % de las épocas, con un kappa de 0.76, igual al acuerdo
+habitual entre dos expertos (Figura 6).
 
 Pulse **Generar clasificación** para continuar.
+
+![Tarjeta del modelo con su desempeño y el botón Generar clasificación](capturas/paso05_modelo_generar.png)
+
+*Figura 6. Tarjeta del modelo TinySleepNet con su desempeño en personas no
+vistas, y el botón para iniciar la clasificación.*
 
 ---
 
 ## 3. Etapa 2: clasificación
 
-![Aviso «Estamos generando la clasificación» con la barra de avance](capturas/03_clasificando.png)
-
-*Figura 4. Clasificación en curso: lote 22 de 45 y tiempo restante.*
-
-Aparece el aviso **"Estamos generando la clasificación"** con una barra de
-avance y el tiempo estimado restante. Mientras tanto el tablero:
+Aparece el aviso **«Estamos generando la clasificación»**, con el registro y
+las señales que se están analizando, una barra de avance y el tiempo estimado
+restante (Figura 7). Mientras tanto el tablero:
 
 1. Clasifica cada época del registro con el modelo.
 2. Ubica el periodo principal de sueño.
 3. Calcula los indicadores.
 
-No cierre ni recargue la página. La duración depende del largo del registro;
-la barra muestra cuánto falta. En la versión desplegada, una noche de Sleep
-Cassette (de 20 a 23 horas grabadas) tardó entre 35 y 38 segundos con las cuatro señales. Si el servicio no responde, el tablero lo indica
-con un mensaje y un botón para volver a intentarlo.
+No cierre ni recargue la página. La duración depende del largo del registro:
+en la versión desplegada, una noche de Sleep Cassette (de 20 a 23 horas
+grabadas) tarda entre 35 y 45 segundos con las cuatro señales. Si el servicio no
+responde, el tablero lo indica con un mensaje y un botón para volver a
+intentarlo.
+
+![Aviso «Estamos generando la clasificación» con la barra de avance](capturas/paso06_clasificando.png)
+
+*Figura 7. Clasificación en curso de SC4241E0: lote 23 de 45 y unos 23 s
+restantes.*
 
 ---
 
 ## 4. Etapa 3: resultados
 
-![Pantalla de resultados: ficha, resumen del sueño, tiempo en cada estadio e hipnogramas](capturas/04a_resultados.png)
-
-*Figura 5. Resultados de SC4241E0 con las cuatro señales: ficha del análisis,
-resumen del sueño, tiempo en cada estadio e hipnograma del modelo y del
-experto.*
+Cuando termina, el tablero pasa a **3 · Resultados**. La pantalla se recorre de
+arriba hacia abajo: ficha del análisis, resumen del sueño, hipnograma, señal
+por época, comparación con el experto y descargas.
 
 ### 4.1 Ficha del análisis
 
 Resume qué se analizó: el registro, las señales usadas (y su número de
-combinación), el modelo y la **ventana analizada**.
+combinación), el modelo y la **ventana analizada** (Figura 8).
+
+![Ficha del análisis con el registro, las señales, el modelo y la ventana analizada](capturas/paso07_ficha_analisis.png)
+
+*Figura 8. Ficha de SC4241E0: se analizó de 23:25 a 07:34 (8 h 09 min de las
+22 h 31 min grabadas) y se dejaron fuera 1 724 épocas de vigilia antes y después
+del sueño.*
 
 **Por qué hay una ventana analizada.** Un registro de Sleep Cassette dura cerca
 de 20 horas y la mayor parte es vigilia de día. El modelo se entrenó con la noche
@@ -176,8 +219,8 @@ grabación y no afectan los indicadores.
 
 ### 4.2 Resumen del sueño
 
-Los indicadores se calculan dentro de la ventana analizada. Al pasar el cursor
-sobre el ícono **?** de cada uno, el tablero explica qué mide.
+Los indicadores se calculan dentro de la ventana analizada (Figura 9). Al pasar
+el cursor sobre el ícono **?** de cada uno, el tablero explica qué mide.
 
 | Indicador | Qué mide | Qué le dice al usuario |
 |---|---|---|
@@ -193,6 +236,11 @@ REM, cada uno con el borde de su color. Es un dato estándar de los informes de
 polisomnografía: permite ver, por ejemplo, si hubo poco sueño profundo o poco
 REM. La vigilia dentro de la ventana se informa aparte, porque no es sueño.
 
+![Resumen del sueño con los cinco indicadores y el tiempo en cada estadio](capturas/paso08_resumen_sueno.png)
+
+*Figura 9. Resumen de SC4241E0: 6 h 44 min de sueño, de 23:55 a 07:04, 27 min
+despierto tras dormirse, primer REM a 1 h 09 min y 80 épocas para revisar.*
+
 **Indicadores que se decidió no mostrar:**
 
 - *Eficiencia del sueño*. Clínicamente es el tiempo dormido dividido entre el
@@ -204,7 +252,7 @@ REM. La vigilia dentro de la ventana se informa aparte, porque no es sueño.
 ### 4.3 Hipnograma
 
 Muestra el estadio clasificado a lo largo de la noche, con la hora en el eje
-horizontal:
+horizontal (Figura 10):
 
 - **Orden clínico habitual:** W arriba, luego REM, N1, N2 y N3 abajo.
 - **Bloques de color:** cada bloque es el estadio de esas épocas, con el mismo
@@ -215,46 +263,58 @@ horizontal:
   formato**, y una **franja inferior marca en rojo** las épocas en que modelo y
   experto no coinciden. Se puede ocultar con el interruptor *Mostrar el
   hipnograma del experto y las coincidencias*.
-- **Ver el registro completo** muestra también la vigilia fuera de la ventana.
+
+![Hipnograma del modelo y del experto con la franja de coincidencias](capturas/paso09_hipnograma.png)
+
+*Figura 10. Hipnograma de la ventana analizada: arriba el modelo, abajo el
+experto y, al final, en rojo las épocas en que no coinciden.*
+
+El interruptor **Ver el registro completo** muestra también la vigilia fuera de
+la ventana analizada, de principio a fin de la grabación (Figura 11).
+
+![Hipnograma del registro completo, de 15:00 a 15:00](capturas/paso10_hipnograma_completo.png)
+
+*Figura 11. Con «Ver el registro completo» activado se ve toda la grabación: la
+noche queda entre largos periodos de vigilia diurna.*
 
 ### 4.4 Señal y clasificación por época
-
-![Visor de señal en una época N1 de baja confianza, con la segunda opción del modelo](capturas/05_visor_baja_confianza.png)
-
-*Figura 6. Época 1 327 en la vista de 30 s: el modelo eligió N1 con 55 % de
-confianza (⚠, conviene revisarla) y su segunda opción fue vigilia (43 %); el
-experto marcó vigilia, justo la segunda opción.*
 
 Muestra las señales registradas, **cada una con su propio color** y su nombre a
 la izquierda, sobre un fondo limpio. Encima de cada época hay una **franja con
 el estadio clasificado** (su color y su nombre; ⚠ si la confianza es baja), y
-líneas grises separan las épocas de 30 segundos. Sirve para verificar en la
-señal por qué el modelo eligió cada estadio, igual que se hace al calificar un
-estudio.
+líneas grises separan las épocas de 30 segundos (Figura 12). Sirve para
+verificar en la señal por qué el modelo eligió cada estadio, igual que se hace
+al calificar un estudio.
+
+![Visor de señal en la vista de 30 s, en una época N1 de baja confianza](capturas/paso11_visor_30s.png)
+
+*Figura 12. Época 931 en la vista de 30 s: el modelo la clasificó como N1 con
+baja confianza (⚠).*
+
+Para moverse por el registro:
 
 - **Anterior / Siguiente**: avanza de a una época.
 - **◀ Baja confianza / Baja confianza ▶**: salta a la época dudosa anterior o
   siguiente. Es la forma más rápida de revisar el estudio.
 - **30 s / 5 min**: una sola época (la ventana clínica habitual) o diez épocas
   para ver el contexto. En la vista de 5 minutos, la época seleccionada se
-  resalta con un fondo gris suave.
+  resalta con un fondo gris suave (Figura 13).
 - La barra deslizante permite ir a cualquier momento del registro.
 
 **Escala de cada señal.** Las señales tienen amplitudes muy distintas: el EEG
 frontal puede superar los 50 µV y la envolvente del EMG rara vez pasa de unos
 pocos µV. Para que todas se vean, cada una se dibuja con su propia escala
-vertical, indicada junto a su nombre (por ejemplo, *escala ±37 µV*). Al pasar
+vertical, indicada junto a su nombre (por ejemplo, *escala ±44 µV*). Al pasar
 el cursor sobre la señal se ve su valor real en µV. El EMG tiene un valor por
 segundo, por eso se ve escalonado.
 
-![Vista de 5 minutos alrededor de una época REM de baja confianza](capturas/06_visor_emg_5min.png)
+![Vista de 5 minutos con la época seleccionada resaltada en gris](capturas/paso12_visor_5min.png)
 
-*Figura 7. Vista de 5 minutos alrededor de la época 1 360, resaltada en gris:
-el paso de N2 a REM con los movimientos oculares (EOG) y los cambios del tono
-muscular (EMG). El modelo eligió REM con 72 % de confianza (segunda opción N1) y
-el experto marcó N2: el contexto ayuda a decidir.*
+*Figura 13. Vista de 5 minutos alrededor de la época 1 597, resaltada en gris:
+una secuencia de N3 y N2 con varias épocas N3 marcadas ⚠.*
 
-Debajo se muestra el detalle de la época seleccionada:
+Debajo de las señales se muestra el detalle de la época seleccionada
+(Figura 14):
 
 - **Clasificación del modelo** y **confianza**.
 - **Segunda opción del modelo**: el estadio con la segunda probabilidad más
@@ -263,6 +323,12 @@ Debajo se muestra el detalle de la época seleccionada:
   movimientos oculares (EOG) y el tono muscular para decidir.
 - La etiqueta del **experto**, si se cargó el hipnograma, y si coincide.
 
+![Detalle de la época 931: clasificación, confianza, segunda opción y experto](capturas/paso13_detalle_epoca.png)
+
+*Figura 14. Detalle de la época 931: el modelo eligió N1 con 52 % de confianza
+(⚠, conviene revisarla) y su segunda opción fue vigilia (46 %); el experto
+marcó vigilia, justo la segunda opción.*
+
 **Qué es la confianza.** Es la probabilidad que el modelo asigna al estadio
 elegido, de 0 a 100 %. No es una garantía de acierto: una época con confianza
 alta también puede estar mal clasificada. Pero las de confianza baja merecen
@@ -270,7 +336,7 @@ revisión prioritaria.
 
 ### 4.5 Comparación con el experto
 
-Solo aparece si hay hipnograma del experto.
+Solo aparece si hay hipnograma del experto (Figura 15).
 
 - **Coincidencia con el experto**: porcentaje de épocas en que coinciden.
 - **Kappa de Cohen**: corrige las coincidencias que ocurrirían por azar
@@ -284,23 +350,19 @@ Solo aparece si hay hipnograma del experto.
 Las épocas que el experto marcó como movimiento o no puntuó se excluyen, porque
 el modelo no predice esas categorías.
 
-![Comparación con el experto: coincidencia, kappa y matriz de confusión](capturas/04b_resultados_comparacion.png)
+![Comparación con el experto: coincidencia, kappa y matriz de confusión](capturas/paso14_comparacion_experto.png)
 
-*Figura 8. Parte final de los resultados: visor de señal, comparación con el
-experto (coincidencia 84 %, kappa 0.77) y descargas.*
+*Figura 15. Comparación de SC4241E0: 84 % de coincidencia y kappa de 0.77 en
+976 épocas.*
 
-Si no se cargó el hipnograma del experto, esta sección no aparece y el
-hipnograma muestra solo la clasificación del modelo. La ventana analizada y los
-indicadores se calculan igual.
-
-![Resultados de un registro subido sin hipnograma del experto](capturas/07_resultados_sin_hipnograma.png)
-
-*Figura 9. Registro SC4041E0 subido sin hipnograma: no hay comparación ni
-franja de coincidencias.*
+> 🛑 **Si no cargó el hipnograma del experto**, esta sección no aparece y el
+> hipnograma muestra solo la clasificación del modelo, sin la franja de
+> coincidencias. La ventana analizada y los indicadores se calculan igual.
 
 ### 4.6 Descargar resultados
 
-Hay dos archivos, para dos usos distintos:
+Al final de la página hay dos botones de descarga, para dos usos distintos
+(Figura 16).
 
 Los dos archivos incluyen **Hallazgos**: un resumen en palabras de lo que
 muestran los indicadores (cuánto y cuándo durmió la persona, cómo se repartió la
@@ -332,7 +394,13 @@ Ambos archivos usan la fuente Century Gothic. En el PDF, si el servidor no
 tiene Century Gothic instalada, se usa URW Gothic, una versión libre del mismo
 diseño.
 
-Pulse **Analizar otro registro** para volver a la etapa 1.
+![Botones para descargar el informe en PDF y los datos por época en Excel](capturas/paso15_descargas.png)
+
+*Figura 16. Descargas: el informe en PDF y los datos por época en Excel. Debajo
+se indica cuánto tardó la clasificación.*
+
+Pulse **Analizar otro registro**, en la ficha del análisis, para volver a la
+etapa 1.
 
 ---
 
